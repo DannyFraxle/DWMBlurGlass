@@ -201,7 +201,7 @@ namespace MDWMBlurGlass
 
 		GetCfgValueInternal(L"effectType",
 		{
-			cfgData.effectType = (MDWMBlurGlass::effectType)std::clamp(_wtoi(value.data()), -1, 3);
+			cfgData.effectType = (MDWMBlurGlass::effectType)std::clamp(_wtoi(value.data()), -1, 4);
 			if (cfgData.blurmethod != blurMethod::CustomBlur && cfgData.effectType > effectType::Acrylic)
 				cfgData.effectType = effectType::Acrylic;
 		});
@@ -209,6 +209,16 @@ namespace MDWMBlurGlass
 		GetCfgValueInternal(L"blurQuality",
 		{
 			cfgData.blurQuality = (MDWMBlurGlass::blurQuality)std::clamp(_wtoi(value.data()), 0, 1);
+		});
+
+		GetCfgValueInternal(L"glassRefractionAmount",
+		{
+			cfgData.glassRefractionAmount = (float)std::clamp(_wtof(value.data()), 0.0, 64.0);
+		});
+
+		GetCfgValueInternal(L"glassRimThickness",
+		{
+			cfgData.glassRimThickness = std::clamp(_wtoi(value.data()), 1, 64);
 		});
 
 		GetCfgValueInternal(L"crossfadeTime",

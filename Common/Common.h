@@ -37,7 +37,8 @@ namespace MDWMBlurGlass
 		Blur,
 		Aero,
 		Acrylic,
-		Mica
+		Mica,
+		LiquidGlass
 	};
 
 	enum class blurQuality
@@ -74,6 +75,9 @@ namespace MDWMBlurGlass
 		int extendRound = 10;
 		int clipRound = 0;
 		int titlebtnOffsetX = -1;
+		// LiquidGlass material tuning (edge refraction), config.ini only
+		float glassRefractionAmount = 8.f;
+		int glassRimThickness = 12;
 		//
 
 		int customCloseBtnW = 49;
