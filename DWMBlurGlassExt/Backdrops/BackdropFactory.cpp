@@ -417,6 +417,13 @@ namespace MDWMBlurGlassExt
 		}
 
 		g_type = g_configData.effectType;
+		// liquid glass needs the raw-D2D blur path (CCustomBlur), which only
+		// exists on windows 10; win11 renders the blur as a d3d render graph
+		// with no ID2D1Image to refract, so the effect is unavailable there
+		if (os::buildNumber >= 22000 && g_type == effectType::LiquidGlass)
+		{
+			g_type = effectType::Blur;
+		}
 		// mica is not available in windows 10
 		if (os::buildNumber < 22000 && g_type == effectType::Mica)
 		{

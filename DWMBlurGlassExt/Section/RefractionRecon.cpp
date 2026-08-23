@@ -22,7 +22,7 @@ namespace MDWMBlurGlassExt::RefractionRecon
 
 	// Probe only the first few calls of each site, then go quiet: these run
 	// once per window per frame and must not become a perf or disk problem.
-	constexpr int kProbeCalls = 4;
+	constexpr int kProbeCalls = 2;
 	std::atomic_int g_nExecuteBlur{ 0 };
 	std::atomic_int g_nCustomBlurDraw{ 0 };
 
@@ -95,9 +95,31 @@ namespace MDWMBlurGlassExt::RefractionRecon
 		return nullptr;
 	}
 
+	// Name the module owning an address (which DLL does this vtable live in?).
+	static void ModuleOf(const void* addr, char* out, size_t cb, uintptr_t* offset)
+	{
+		HMODULE h{};
+		*offset = 0;
+		if (GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+			reinterpret_cast<LPCWSTR>(addr), &h) && h)
+		{
+			wchar_t path[MAX_PATH]{};
+			if (GetModuleFileNameW(h, path, MAX_PATH))
+			{
+				const wchar_t* name = wcsrchr(path, L'\\');
+				name = name ? name + 1 : path;
+				WideCharToMultiByte(CP_UTF8, 0, name, -1, out, static_cast<int>(cb), nullptr, nullptr);
+				*offset = reinterpret_cast<uintptr_t>(addr) - reinterpret_cast<uintptr_t>(h);
+				return;
+			}
+		}
+		strcpy_s(out, cb, "?");
+	}
+
 	// Walk the first N pointer slots of an opaque DWM struct looking for
-	// anything that behaves like a D2D COM object.
-	static void ProbeObject(const char* label, const void* obj, int slots = 16)
+	// anything that behaves like a D2D COM object. depth>0 recurses into
+	// COM-like children, since the real ID2D1Image may be a member.
+	static void ProbeObject(const char* label, const void* obj, int slots = 24, int depth = 1)
 	{
 		if (!IsReadable(obj, sizeof(void*) * static_cast<size_t>(slots)))
 		{
@@ -115,8 +137,16 @@ namespace MDWMBlurGlassExt::RefractionRecon
 			if (!IsImagePtr(vtable))
 				continue;
 			const char* iface = ProbeIface(v);
-			LogLine("      [%2d] %p  vt=%p  %s", i, v, vtable,
+			char mod[64]{}; uintptr_t off = 0;
+			ModuleOf(vtable, mod, sizeof(mod), &off);
+			LogLine("      [%2d] %p  vt=%s+0x%llX  %s", i, v, mod, (unsigned long long)off,
 				iface ? iface : "(com-like, no known D2D iface)");
+			if (depth > 0)
+			{
+				char childLabel[96]{};
+				sprintf_s(childLabel, "child of %s[%d]", label, i);
+				ProbeObject(childLabel, v, 24, depth - 1);
+			}
 		}
 	}
 
