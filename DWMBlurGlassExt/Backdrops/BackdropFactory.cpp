@@ -334,16 +334,37 @@ namespace MDWMBlurGlassExt
 		}
 		case effectType::LiquidGlass:
 		{
-			if (!g_rimNormalMapBrush)
-				g_rimNormalMapBrush = CreateRimNormalMapBrush(g_configData.glassRimThickness);
-			brush = LiquidGlassBackdrop::CreateBrush(
-				compositor,
-				g_rimNormalMapBrush,
-				winrtColor,
-				glassOpacity,
-				g_configData.customBlurAmount,
-				g_configData.glassRefractionAmount
-			);
+			// The rim map is built once in RefreshConfig - never here. This runs on
+			// DWM's render path, so it must not create devices/surfaces or let an
+			// exception escape into dwm.exe. If anything is amiss, degrade to plain
+			// blur rather than taking the compositor down with us.
+			if (g_rimNormalMapBrush)
+			{
+				try
+				{
+					brush = LiquidGlassBackdrop::CreateBrush(
+						compositor,
+						g_rimNormalMapBrush,
+						winrtColor,
+						glassOpacity,
+						g_configData.customBlurAmount,
+						g_configData.glassRefractionAmount
+					);
+				}
+				catch (...)
+				{
+					brush = nullptr;
+				}
+			}
+			if (!brush)
+			{
+				brush = BlurBackdrop::CreateBrush(
+					compositor,
+					winrtColor,
+					glassOpacity,
+					g_configData.customBlurAmount
+				);
+			}
 			break;
 		}
 		default:
@@ -379,8 +400,21 @@ namespace MDWMBlurGlassExt
 			g_materialTextureBrush = CreateMaterialTextureBrush();
 		}
 
-		// rebuild the rim map on next use so a changed rim thickness takes effect
+		// Build the rim map here (same place as the material texture) and never on the
+		// render path. On failure leave it null - GetOrCreateBackdropBrush then falls
+		// back to plain blur instead of crashing dwm.exe.
 		g_rimNormalMapBrush = nullptr;
+		if (g_configData.effectType == effectType::LiquidGlass)
+		{
+			try
+			{
+				g_rimNormalMapBrush = CreateRimNormalMapBrush(g_configData.glassRimThickness);
+			}
+			catch (...)
+			{
+				g_rimNormalMapBrush = nullptr;
+			}
+		}
 
 		g_type = g_configData.effectType;
 		// mica is not available in windows 10
