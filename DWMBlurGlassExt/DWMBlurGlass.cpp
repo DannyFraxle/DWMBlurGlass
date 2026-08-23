@@ -18,6 +18,7 @@
 #include "DefFunctionList.h"
 #include "DWMBlurGlass.h"
 #include "Section/OcclusionCulling.h"
+#include "Section/RefractionRecon.h"
 #include "HookDef.h"
 #include <mutex>
 #include <minidumpapiset.h>
@@ -155,6 +156,7 @@ namespace MDWMBlurGlassExt
 		CustomBackdrop::Detach();
 		DwmAPIEffect::Detach();
 		ScaleOptimizer::Detach();
+		RefractionRecon::Detach();
 
 		g_CTopLevelWindow_ValidateVisual_HookDispatcher.enable_hook_routine<4, false>();
 
@@ -190,6 +192,7 @@ namespace MDWMBlurGlassExt
 		BlurRadiusTweaker::Refresh();
 		CustomButton::Refresh();
 		ScaleOptimizer::Refresh();
+		RefractionRecon::Refresh();
 
 		if (g_configData.useAccentColor)
 			RefreshAccentColor(0);

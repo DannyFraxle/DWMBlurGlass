@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <Import Project="..\packages\VC-LTL.5.0.9\build\native\VC-LTL.props" Condition="Exists('..\packages\VC-LTL.5.0.9\build\native\VC-LTL.props')" />
   <Import Project="..\packages\YY.NuGet.Import.Helper.1.0.0.4\build\native\YY.NuGet.Import.Helper.props" Condition="Exists('..\packages\YY.NuGet.Import.Helper.1.0.0.4\build\native\YY.NuGet.Import.Helper.props')" />
@@ -212,6 +212,7 @@
     <ClInclude Include="Section\DwmAPIEffect.h" />
     <ClInclude Include="Section\GeometryRecorder.h" />
     <ClInclude Include="Section\OcclusionCulling.h" />
+    <ClInclude Include="Section\RefractionRecon.h" />
     <ClInclude Include="Section\ScaleOptimizer.h" />
     <ClInclude Include="Section\TitleTextTweaker.h" />
     <ClInclude Include="Section\VisualManager.hpp" />
@@ -238,6 +239,7 @@
     <ClCompile Include="Section\DwmAPIEffect.cpp" />
     <ClCompile Include="Section\GeometryRecorder.cpp" />
     <ClCompile Include="Section\OcclusionCulling.cpp" />
+    <ClCompile Include="Section\RefractionRecon.cpp" />
     <ClCompile Include="Section\ScaleOptimizer.cpp" />
     <ClCompile Include="Section\TitleTextTweaker.cpp" />
     <ClCompile Include="Section\VisualManager.cpp" />
