@@ -75,6 +75,7 @@
                         <ComboBoxItem Content="Aero"/>
                         <ComboBoxItem Content="Acrylic"/>
                         <ComboBoxItem Content="Mica"/>
+                        <ComboBoxItem Content="LiquidGlass"/>
                     </ComboBox>
                 </Grid>
 
