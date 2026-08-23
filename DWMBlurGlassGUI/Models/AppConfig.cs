@@ -16,7 +16,8 @@ namespace DWMBlurGlassGUI.Models
         Blur,
         Aero,
         Acrylic,
-        Mica
+        Mica,
+        LiquidGlass
     }
 
     public enum BlurQuality
