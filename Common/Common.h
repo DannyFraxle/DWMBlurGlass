@@ -37,7 +37,8 @@ namespace MDWMBlurGlass
 		Blur,
 		Aero,
 		Acrylic,
-		Mica
+		Mica,
+		LiquidGlass
 	};
 
 	struct ConfigData
@@ -62,6 +63,9 @@ namespace MDWMBlurGlass
 		//Options without GUI
 		int extendRound = 10;
 		int titlebtnOffsetX = -1;
+		// LiquidGlass material tuning (edge refraction), config.ini only
+		float glassRefractionAmount = 8.f;
+		int glassRimThickness = 12;
 		//
 
 		float blurAmount = 20.f;

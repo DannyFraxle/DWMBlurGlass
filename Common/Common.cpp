@@ -203,9 +203,19 @@ namespace MDWMBlurGlass
 
 		GetCfgValueInternal(L"effectType",
 		{
-			cfgData.effectType = (MDWMBlurGlass::effectType)std::clamp(_wtoi(value.data()), -1, 3);
+			cfgData.effectType = (MDWMBlurGlass::effectType)std::clamp(_wtoi(value.data()), -1, 4);
 			if (cfgData.blurmethod != blurMethod::CustomBlur && cfgData.effectType > effectType::Acrylic)
 				cfgData.effectType = effectType::Acrylic;
+		});
+
+		GetCfgValueInternal(L"glassRefractionAmount",
+		{
+			cfgData.glassRefractionAmount = (float)std::clamp(_wtof(value.data()), 0.0, 64.0);
+		});
+
+		GetCfgValueInternal(L"glassRimThickness",
+		{
+			cfgData.glassRimThickness = std::clamp(_wtoi(value.data()), 1, 64);
 		});
 
 		GetCfgValueInternal(L"crossfadeTime",
@@ -264,6 +274,8 @@ namespace MDWMBlurGlass
 				{ L"aeroBlurBalance", make_wstring(cfg.aeroBlurBalance) },
 				{ L"blurMethod", make_wstring((int)cfg.blurmethod) },
 				{ L"effectType", make_wstring((int)cfg.effectType) },
+				{ L"glassRefractionAmount", make_wstring(cfg.glassRefractionAmount) },
+				{ L"glassRimThickness", make_wstring(cfg.glassRimThickness) },
 				{ L"crossfadeTime", make_wstring(cfg.crossfadeTime) },
 				{ L"overrideAccent", make_wstring(cfg.overrideAccent) },
 				{ L"occlusionCulling", make_wstring(cfg.scaleOptimizer) },

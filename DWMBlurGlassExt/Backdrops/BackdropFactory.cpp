@@ -6,12 +6,14 @@
 #include "BlurBackdrop.hpp"
 #include "AcrylicBackdrop.hpp"
 #include "MicaBackdrop.hpp"
+#include "LiquidGlassBackdrop.hpp"
 
 namespace MDWMBlurGlassExt
 {
 	effectType g_type{ effectType::Blur };
 
 	wuc::CompositionSurfaceBrush g_materialTextureBrush{ nullptr };
+	wuc::CompositionBrush g_rimNormalMapBrush{ nullptr };
 	std::chrono::steady_clock::time_point g_currentTimeStamp{};
 	std::unordered_map<DWORD, wuc::CompositionBrush> g_backdropActiveBrushMap{};
 	std::unordered_map<DWORD, wuc::CompositionBrush> g_backdropInactiveBrushMap{};
@@ -102,6 +104,107 @@ namespace MDWMBlurGlassExt
 		);
 
 		return noiceBrush;
+	}
+
+	// Builds a small normal-map texture whose interior is neutral (no displacement)
+	// and whose border ramps the normal outward over 'rimThickness' pixels, then
+	// wraps it in a nine-grid brush so the refracting rim keeps a constant pixel
+	// width no matter how large the window is. Consumed by LiquidGlassBackdrop.
+	wuc::CompositionBrush CreateRimNormalMapBrush(int rimThickness)
+	{
+		rimThickness = std::clamp(rimThickness, 1, 64);
+
+		com_ptr<DCompPrivate::IDCompositionDesktopDevicePartner> dcompDevice{ nullptr };
+		copy_from_abi(dcompDevice, DWM::CDesktopManager::s_pDesktopManagerInstance->GetDCompositionInteropDevice());
+		auto compositor{ dcompDevice.as<wuc::Compositor>() };
+
+		winrt::Windows::UI::Composition::CompositionGraphicsDevice graphicsDevice{ nullptr };
+		THROW_IF_FAILED(
+			compositor.as<ABI::Windows::UI::Composition::ICompositorInterop>()->CreateGraphicsDevice(
+				DWM::CDesktopManager::s_pDesktopManagerInstance->GetD2DDevice(),
+				reinterpret_cast<ABI::Windows::UI::Composition::ICompositionGraphicsDevice**>(winrt::put_abi(graphicsDevice))
+			)
+		);
+
+		// 1px neutral centre + rimThickness border on each side; nine-grid insets
+		// equal rimThickness so only the border is preserved and the centre stretches.
+		const int side{ rimThickness * 2 + 1 };
+		auto compositionSurface
+		{
+			graphicsDevice.CreateDrawingSurface(
+				{ static_cast<float>(side), static_cast<float>(side) },
+				winrt::Windows::Graphics::DirectX::DirectXPixelFormat::B8G8R8A8UIntNormalized,
+				winrt::Windows::Graphics::DirectX::DirectXAlphaMode::Premultiplied
+			)
+		};
+
+		// CPU-fill the normal map. Channel 0.5 (=128) means "no displacement".
+		// Left edge pushes +X (sample rightward => magnify inward), right edge -X;
+		// top pushes +Y, bottom -Y. Ramp smoothly to neutral at the inner rim edge.
+		std::vector<uint32_t> pixels(static_cast<size_t>(side) * side);
+		auto encode = [](float nx, float ny) -> uint32_t
+		{
+			auto toByte = [](float n) -> uint32_t
+			{
+				float v = std::clamp(0.5f + n * 0.5f, 0.f, 1.f);
+				return static_cast<uint32_t>(v * 255.f + 0.5f);
+			};
+			uint32_t r = toByte(nx);
+			uint32_t g = toByte(ny);
+			// premultiplied BGRA, opaque: A=255, RGB unchanged
+			return (0xFFu << 24) | (r << 16) | (g << 8) | 0x00u;
+		};
+		for (int y = 0; y < side; ++y)
+		{
+			for (int x = 0; x < side; ++x)
+			{
+				// signed distance into the rim from each edge, 0..1 (1 at outer edge)
+				float leftT   = x < rimThickness ? (rimThickness - x) / static_cast<float>(rimThickness) : 0.f;
+				float rightT  = x >= side - rimThickness ? (x - (side - 1 - rimThickness)) / static_cast<float>(rimThickness) : 0.f;
+				float topT    = y < rimThickness ? (rimThickness - y) / static_cast<float>(rimThickness) : 0.f;
+				float bottomT = y >= side - rimThickness ? (y - (side - 1 - rimThickness)) / static_cast<float>(rimThickness) : 0.f;
+				// square the profile for a lens-like curve concentrated at the very edge
+				auto curve = [](float t) { return t * t; };
+				float nx = curve(leftT) - curve(rightT);
+				float ny = curve(topT) - curve(bottomT);
+				pixels[static_cast<size_t>(y) * side + x] = encode(nx, ny);
+			}
+		}
+
+		auto drawingSurfaceInterop{ compositionSurface.as<ABI::Windows::UI::Composition::ICompositionDrawingSurfaceInterop>() };
+		POINT offset{ 0, 0 };
+		com_ptr<ID2D1DeviceContext> d2dContext{ nullptr };
+		THROW_IF_FAILED(
+			drawingSurfaceInterop->BeginDraw(nullptr, IID_PPV_ARGS(d2dContext.put()), &offset)
+		);
+		d2dContext->Clear();
+		com_ptr<ID2D1Bitmap1> d2dBitmap{ nullptr };
+		D2D1_SIZE_U bmpSize{ static_cast<UINT32>(side), static_cast<UINT32>(side) };
+		THROW_IF_FAILED(
+			d2dContext->CreateBitmap(
+				bmpSize,
+				pixels.data(),
+				static_cast<UINT32>(side * sizeof(uint32_t)),
+				D2D1::BitmapProperties1(
+					D2D1_BITMAP_OPTIONS_NONE,
+					D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED)
+				),
+				d2dBitmap.put()
+			)
+		);
+		d2dContext->DrawBitmap(
+			d2dBitmap.get(),
+			D2D1::RectF(static_cast<float>(offset.x), static_cast<float>(offset.y),
+				static_cast<float>(offset.x + side), static_cast<float>(offset.y + side))
+		);
+		THROW_IF_FAILED(drawingSurfaceInterop->EndDraw());
+
+		auto surfaceBrush{ compositor.CreateSurfaceBrush(compositionSurface) };
+		auto nineGrid{ compositor.CreateNineGridBrush() };
+		nineGrid.Source(surfaceBrush);
+		nineGrid.SetInsets(static_cast<float>(rimThickness));
+		nineGrid.IsCenterHollow(false);
+		return nineGrid;
 	}
 
 	wuc::CompositionBrush BackdropFactory::GetOrCreateBackdropBrush(
@@ -229,6 +332,20 @@ namespace MDWMBlurGlassExt
 			}
 			break;
 		}
+		case effectType::LiquidGlass:
+		{
+			if (!g_rimNormalMapBrush)
+				g_rimNormalMapBrush = CreateRimNormalMapBrush(g_configData.glassRimThickness);
+			brush = LiquidGlassBackdrop::CreateBrush(
+				compositor,
+				g_rimNormalMapBrush,
+				winrtColor,
+				glassOpacity,
+				g_configData.customBlurAmount,
+				g_configData.glassRefractionAmount
+			);
+			break;
+		}
 		default:
 			brush = compositor.CreateColorBrush(MakeWinrtColor(policy ? policy->nColor : color));
 			break;
@@ -252,6 +369,7 @@ namespace MDWMBlurGlassExt
 		g_backdropActiveBrushMap.clear();
 		g_backdropInactiveBrushMap.clear();
 		g_materialTextureBrush = nullptr;
+		g_rimNormalMapBrush = nullptr;
 	}
 
 	void BackdropFactory::RefreshConfig()
@@ -260,6 +378,9 @@ namespace MDWMBlurGlassExt
 		{
 			g_materialTextureBrush = CreateMaterialTextureBrush();
 		}
+
+		// rebuild the rim map on next use so a changed rim thickness takes effect
+		g_rimNormalMapBrush = nullptr;
 
 		g_type = g_configData.effectType;
 		// mica is not available in windows 10

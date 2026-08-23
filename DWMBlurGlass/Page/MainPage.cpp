@@ -888,12 +888,15 @@ namespace MDWMBlurGlass
         combox->GetItem(2)->SetText(index == blurMethod::DWMAPIBlur ? L"MicaAlt" : L"Acrylic");
         if (index == blurMethod::CustomBlur)
         {
-            auto item = new ListItem();
-            item->SetText(L"Mica");
-            combox->AddItem(item, -1, false);
+            auto micaItem = new ListItem();
+            micaItem->SetText(L"Mica");
+            combox->AddItem(micaItem, -1, false);
+            auto glassItem = new ListItem();
+            glassItem->SetText(L"LiquidGlass");
+            combox->AddItem(glassItem, -1, false);
         }
-		else if (combox->GetItemListCount() > 3)
-            combox->DeleteItem(3);
+		else while (combox->GetItemListCount() > 3)
+            combox->DeleteItem(combox->GetItemListCount() - 1);
 
         combox->SetCurSelItem(0, false);
 
