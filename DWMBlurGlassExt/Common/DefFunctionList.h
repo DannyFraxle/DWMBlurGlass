@@ -168,5 +168,41 @@ namespace MDWMBlurGlassExt
 
 		{ udwm, "CMatrixTransformProxy::Update" },
 		{ udwm, "CRgnGeometryProxy::Update" },
+
+		// Win11 post-composition pass (Section/D3DPresentHook.cpp). DWM presents
+		// through its own private stack - IDXGISwapChainDWM1, not IDXGISwapChain -
+		// so there is no public vtable to patch. PrePresent runs once per frame
+		// after composition is complete and before the present goes out;
+		// CreateBackBuffer hands us the composed ID3D11Texture2D to work on.
+		// NOTE: entries are matched to symbol offsets by INDEX, so only ever
+		// append here, and rebuild DWMBlurGlassHost as well as the extension.
+		{ dwmcore, "CLegacySwapChain::PrePresent" },
+		{ dwmcore, "CLegacySwapChain::CreateBackBuffer" },
+		{ dwmcore, "CDDisplaySwapChain::PrePresent" },
+
+		// From PrePresent, GetBackBuffer yields an IDeviceTarget which is
+		// concretely a CDeviceTextureTarget - and that hands out the composed
+		// desktop as a plain ID3D11Texture2D plus ready-made RTV and SRV, which
+		// is everything the post-composition pass needs. GetTexture2D and
+		// GetShaderResourceView each have an adjustor-thunk twin, so those two
+		// are named in decorated form to pick the primary out unambiguously.
+		{ dwmcore, "CDDisplaySwapChain::GetBackBuffer" },
+		{ dwmcore, "?GetTexture2D@CDeviceTextureTarget@@UEAAPEAUID3D11Texture2D@@XZ" },
+		{ dwmcore, "CDeviceTextureTarget::GetRenderTargetView" },
+		{ dwmcore, "?GetShaderResourceView@CDeviceTextureTarget@@UEAAPEAUID3D11ShaderResourceView@@XZ" },
+		{ dwmcore, "CDDisplaySwapChainBuffer::GetD3D11Resource" },
+		// dwmcore is linked with COMDAT folding, so a one-line getter can share
+		// an address with an unrelated one-line getter of the same shape. That
+		// makes "is this function in the object's vtable" an unreliable type
+		// check, so these accessors are HOOKED and their real return values
+		// observed, rather than called speculatively on a guessed `this`.
+		{ dwmcore, "CDrawingContext::BeginFrame" },
+
+		// DWM composes back to front, so at the instant this is called the frame
+		// target already holds everything underneath this window - other windows,
+		// desktop icons, wallpaper. Capturing there and refracting after the
+		// window has drawn is what lets the rim show what is actually behind the
+		// glass, which a post-composition pass structurally cannot see.
+		{ dwmcore, "CWindowNode::RenderContent" },
 	});
 }

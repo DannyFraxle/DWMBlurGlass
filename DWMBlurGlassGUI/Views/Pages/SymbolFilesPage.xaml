@@ -69,7 +69,7 @@
                 </StackPanel>
 
                 <!-- Download Status Text (visible when not downloading but has status) -->
-                <TextBlock Text="{Binding DownloadStatusText}" FontSize="12" Margin="0,0,0,12" Foreground="{DynamicResource TextFillColorSecondaryBrush}">
+                <TextBlock Text="{Binding DownloadStatusText}" FontSize="12" Margin="0,0,0,12" TextWrapping="Wrap" Foreground="{DynamicResource TextFillColorSecondaryBrush}">
                     <TextBlock.Style>
                         <Style TargetType="TextBlock">
                             <Setter Property="Visibility" Value="Visible"/>

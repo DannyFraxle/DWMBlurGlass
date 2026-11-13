@@ -62,6 +62,12 @@ namespace DWMBlurGlassGUI
 
         public static IServiceProvider Services => _serviceProvider;
 
+        /// <summary>
+        /// Page shown on startup. "--page symbols" opens the Symbol Files page; clicking the host's
+        /// "symbol files need updating" notification launches the GUI that way (via DWMBlurGlassNotify.exe).
+        /// </summary>
+        public static Type StartPage { get; private set; } = typeof(GeneralSettingsPage);
+
         public static T GetService<T>() where T : class
         {
             return _serviceProvider.GetRequiredService<T>();
@@ -88,10 +94,20 @@ namespace DWMBlurGlassGUI
 
             base.OnStartup(e);
 
+            StartPage = ParseStartPage(e.Args);
+
             ApplicationThemeManager.ApplySystemTheme();
 
             var mainWindow = GetService<MainWindow>();
             mainWindow.Show();
+        }
+
+        private static Type ParseStartPage(string[] args)
+        {
+            int index = Array.FindIndex(args, a => a.Equals("--page", StringComparison.OrdinalIgnoreCase));
+            if (index >= 0 && index + 1 < args.Length && args[index + 1].Equals("symbols", StringComparison.OrdinalIgnoreCase))
+                return typeof(SymbolFilesPage);
+            return typeof(GeneralSettingsPage);
         }
 
         /// <summary>

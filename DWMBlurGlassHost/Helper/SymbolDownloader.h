@@ -63,6 +63,9 @@ namespace MDWMBlurGlass
 		// 获取最后的错误信息
 		std::wstring GetLastError() const { return m_lastError; }
 
+		// HTTP status of the last request, 0 if none got that far
+		DWORD GetLastHttpStatus() const { return m_lastHttpStatus; }
+
 	private:
 		// 检查单个DLL的符号是否有效
 		bool CheckSingleSymbolValid(std::wstring_view dllName);
@@ -80,10 +83,19 @@ namespace MDWMBlurGlass
 
 		std::wstring m_symbolsPath;
 		std::wstring m_lastError;
+		DWORD m_lastHttpStatus = 0;
 		std::atomic<bool> m_cancelRequested{ false };
 
 		static constexpr const wchar_t* TargetDlls[] = { L"dwmcore.dll", L"uDwm.dll" };
 		static constexpr const wchar_t* SymbolServerUrl = L"https://msdl.microsoft.com/download/symbols";
+	};
+
+	enum class SymbolDownloadOutcome
+	{
+		Success,
+		Cancelled,
+		NotPublished,	// the symbol server has no PDB for this build yet (HTTP 404)
+		Failed
 	};
 
 	// 符号下载进度对话框
@@ -91,8 +103,7 @@ namespace MDWMBlurGlass
 	{
 	public:
 		// 显示下载对话框 (模态)
-		// 返回: true = 下载成功, false = 下载失败或被取消
-		static bool Show(HWND hParent = nullptr);
+		static SymbolDownloadOutcome Show(HWND hParent = nullptr);
 
 	private:
 		static INT_PTR CALLBACK DialogProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam);

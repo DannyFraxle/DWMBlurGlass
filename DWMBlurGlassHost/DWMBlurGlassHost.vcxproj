@@ -161,8 +161,10 @@
   <ItemGroup>
     <ClInclude Include="framework.h" />
     <ClInclude Include="Helper\Helper.h" />
+    <ClInclude Include="Helper\OffsetCache.h" />
     <ClInclude Include="Helper\SymbolDownloader.h" />
     <ClInclude Include="Helper\SymbolResolver.h" />
+    <ClInclude Include="Helper\ToastNotifier.h" />
     <ClInclude Include="Helper\wil.h" />
     <ClInclude Include="MHostHelper.h" />
     <ClInclude Include="pugixml\pugiconfig.hpp" />
@@ -172,8 +174,11 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Helper\Helper.cpp" />
+    <ClCompile Include="Helper\OffsetCache.cpp" />
     <ClCompile Include="Helper\SymbolDownloader.cpp" />
+    <ClCompile Include="..\DWMBlurGlassExt\minhook\hde\hde64.c" />
     <ClCompile Include="Helper\SymbolResolver.cpp" />
+    <ClCompile Include="Helper\ToastNotifier.cpp" />
     <ClCompile Include="MHostHelper.cpp" />
     <ClCompile Include="pugixml\pugixml.cpp" />
     <ClCompile Include="UIManager.cpp" />

@@ -174,6 +174,31 @@ namespace MDWMBlurGlass
 			cfgData.inactiveBlendColorDark = (COLORREF)_wtoll(value.data());
 		});
 
+		GetCfgValueInternal(L"titleGradient",
+		{
+			cfgData.titleGradient = (gradientDirection)std::clamp(_wtoi(value.data()), 0, 2);
+		});
+
+		GetCfgValueInternal(L"activeGradientColor",
+		{
+			cfgData.activeGradientColor = (COLORREF)_wtoll(value.data());
+		});
+
+		GetCfgValueInternal(L"inactiveGradientColor",
+		{
+			cfgData.inactiveGradientColor = (COLORREF)_wtoll(value.data());
+		});
+
+		GetCfgValueInternal(L"activeGradientColorDark",
+		{
+			cfgData.activeGradientColorDark = (COLORREF)_wtoll(value.data());
+		});
+
+		GetCfgValueInternal(L"inactiveGradientColorDark",
+		{
+			cfgData.inactiveGradientColorDark = (COLORREF)_wtoll(value.data());
+		});
+
 		GetCfgValueInternal(L"blurMethod",
 		{
 			cfgData.blurmethod = (blurMethod)std::clamp(_wtoi(value.data()), 0, 2);
@@ -215,6 +240,10 @@ namespace MDWMBlurGlass
 		{
 			cfgData.glassRefractionAmount = (float)std::clamp(_wtof(value.data()), 0.0, 64.0);
 		});
+
+		cfgData.glassPinch = GetConfigBool(L"glassPinch", true);
+		cfgData.glassDebugRim = GetConfigBool(L"glassDebugRim");
+		cfgData.glassProbeEffects = GetConfigBool(L"glassProbeEffects");
 
 		GetCfgValueInternal(L"glassRimThickness",
 		{

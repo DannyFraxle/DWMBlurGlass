@@ -125,9 +125,11 @@ namespace DWMBlurGlassGUI.ViewModels.Pages
         public Visibility AeroSettingsVisibility => SelectedEffectTypeIndex == 1 ? Visibility.Visible : Visibility.Collapsed;
         public Visibility MaterialOpacityVisibility => SelectedEffectTypeIndex is 2 or 3 ? Visibility.Visible : Visibility.Collapsed;
 
-        // LiquidGlass relies on the raw-D2D blur path that only Windows 10 uses;
-        // on Windows 11 DWM has no Direct2D surface to refract, so hide the option.
-        public static bool IsLiquidGlassSupported => Environment.OSVersion.Version.Build < 22000;
+        // Windows 10 refracts through the raw-D2D blur path. Windows 11 has no
+        // Direct2D surface to refract, so it takes a different route entirely:
+        // a post-composition D3D pass over the presented frame (D3DPresentHook).
+        // Both are supported, so the option is always offered.
+        public static bool IsLiquidGlassSupported => true;
         public Visibility LiquidGlassVisibility => IsLiquidGlassSupported ? Visibility.Visible : Visibility.Collapsed;
 
         partial void OnSelectedEffectTypeIndexChanged(int value)

@@ -150,6 +150,23 @@ namespace DWMBlurGlassGUI.Models
         [ObservableProperty]
         private uint _inactiveBlendColorDark = 0x64000000;
 
+        // Titlebar gradient: 0 = off, 1 = horizontal (Windows 98), 2 = vertical (XP MCE).
+        // The colours are the far end; the near end is the blend colour.
+        [ObservableProperty]
+        private int _titleGradient = 0;
+
+        [ObservableProperty]
+        private uint _activeGradientColor = 0xFFD08410;
+
+        [ObservableProperty]
+        private uint _inactiveGradientColor = 0xFFB5B5B5;
+
+        [ObservableProperty]
+        private uint _activeGradientColorDark = 0xFFD08410;
+
+        [ObservableProperty]
+        private uint _inactiveGradientColorDark = 0xFF505050;
+
         [ObservableProperty]
         private BlurMethod _blurMethod = BlurMethod.CustomBlur;
 

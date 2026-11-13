@@ -18,11 +18,14 @@
 #include "MHostHelper.h"
 #include "Helper/SymbolResolver.h"
 #include "Helper/SymbolDownloader.h"
+#include "Helper/OffsetCache.h"
+#include "Helper/ToastNotifier.h"
 #include "Helper/Helper.h"
 #include "UIManager.h"
 #include "Common.h"
 #include "../DWMBlurGlassExt/Common/DefFunctionList.h"
 #include <TlHelp32.h>
+#include <optional>
 #include "Helper/wil.h"
 
 #pragma data_seg(".DWMBlurGlassShared")
@@ -43,6 +46,9 @@ namespace MDWMBlurGlass
 
 	std::vector<DWORD> g_proclist;
 	UINT_PTR g_timerID = 0;
+
+	// How the startup symbol download went, if one ran; tells the notification why symbols are missing.
+	std::optional<SymbolDownloadOutcome> g_symbolDownload;
 
 	extern void OnProcessStart(DWORD id);
 
@@ -66,14 +72,19 @@ namespace MDWMBlurGlass
 		}
 		CloseHandle(hSnapshot);
 
+		std::vector<DWORD> started;
 		for (const auto& id : list)
 		{
-			if (auto iter = std::ranges::find(g_proclist, id); iter != g_proclist.end())
-				continue;
-
-			OnProcessStart(id);
+			if (std::ranges::find(g_proclist, id) == g_proclist.end())
+				started.push_back(id);
 		}
+
+		// Record the list before starting anything. OnProcessStart can sit in a modal loop (the crash
+		// prompt), which keeps this timer firing; with the old list still in place it would start the
+		// same process again, stacking up one prompt per tick.
 		g_proclist = list;
+		for (const auto& id : started)
+			OnProcessStart(id);
 	}
 
 	bool IsEnableTransparency()
@@ -179,6 +190,45 @@ namespace MDWMBlurGlass
         return SUCCEEDED(hr);
     }
 
+	std::wstring LangOr(std::wstring_view key, std::wstring_view fallback)
+	{
+		std::wstring text = GetLanguageString(key);
+		return text.empty() ? std::wstring(fallback) : text;
+	}
+
+	// A failed load is reported as a notification in the notification centre, not a message box:
+	// it doesn't block the host, and repeats replace each other instead of piling up.
+	void NotifyLoadFailure(const std::wstring& err, bool symbolsFailed)
+	{
+		bool shown;
+		if (symbolsFailed)
+		{
+			std::wstring body;
+			if (g_symbolDownload == SymbolDownloadOutcome::NotPublished)
+				body = LangOr(L"notify_symnotpublished", L"Microsoft hasn't published symbol files for this Windows build yet. "
+					L"This usually takes a few days after an update. The glass effects are paused until then.");
+			else if (g_symbolDownload == SymbolDownloadOutcome::Failed)
+				body = LangOr(L"notify_symdownfail", L"New symbol files couldn't be downloaded, so the glass effects are paused. "
+					L"Check your connection, then download them from the Symbols page.");
+			else
+				body = LangOr(L"notify_symoutdated", L"Windows has been updated and the symbol files no longer match it, "
+					L"so the glass effects are paused. Download new ones from the Symbols page.");
+
+			shown = Toast::ShowStatus(LangOr(L"notify_symtitle", L"Symbol files need updating"), body,
+				LangOr(L"notify_opensymbols", L"Open Symbols page"), L"symbols");
+		}
+		else
+		{
+			shown = Toast::ShowStatus(LangOr(L"notify_loadfailtitle", L"DWMBlurGlass couldn't start"),
+				LangOr(L"loadfail", L"Failed to load component! Error message: ") + err,
+				LangOr(L"notify_open", L"Open DWMBlurGlass"), L"general");
+		}
+
+		// Notifications unavailable or turned off: one message box rather than failing silently.
+		if (!shown)
+			MessageBoxW(nullptr, err.c_str(), L"DWMBlurGlass Error", MB_ICONERROR);
+	}
+
 	void OnProcessStart(DWORD id)
 	{
 		//单独记录每个用户dwm进程的启动间隔状态
@@ -218,10 +268,11 @@ namespace MDWMBlurGlass
 			sessionList.insert(std::make_pair(sessionId, sessionData()));
 
 		std::wstring err;
-		if(!LoadDWMExtensionBase(err, id))
-		{
-			MessageBoxW(0, err.c_str(), L"DWMBlurGlass Error", MB_ICONERROR);
-		}
+		bool symbolsFailed = false;
+		if (LoadDWMExtensionBase(err, id, &symbolsFailed))
+			Toast::ClearStatus();	// a notice left over from an earlier failure no longer applies
+		else
+			NotifyLoadFailure(err, symbolsFailed);
 	}
 
 	LRESULT CALLBACK MsgWndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
@@ -245,8 +296,43 @@ namespace MDWMBlurGlass
 		return DefWindowProcW(hWnd, message, wParam, lParam);
 	}
 
+	constexpr std::pair<MHostModuleType, const wchar_t*> g_symbolModules[] =
+	{
+		{ dwmcore, L"dwmcore.dll" },
+		{ udwm, L"uDwm.dll" }
+	};
+
+	OffsetCache::NameList GetModuleNameList(MHostModuleType type)
+	{
+		OffsetCache::NameList names;
+		for (size_t i = 0; i < MDWMBlurGlassExt::g_hookFunList.size(); ++i)
+		{
+			if (MDWMBlurGlassExt::g_hookFunList[i].first == type)
+				names.emplace_back(i, MDWMBlurGlassExt::g_hookFunList[i].second);
+		}
+		return names;
+	}
+
+	// True if every module's offsets can be had without downloading anything: its PDB is already
+	// local, its build is in the offset cache, or it can be re-located from a previous build.
+	bool CanResolveWithoutDownload()
+	{
+		for (auto& [type, dllName] : g_symbolModules)
+		{
+			if (OffsetCache::LocalPdbExists(dllName))
+				continue;
+			auto names = GetModuleNameList(type);
+			std::vector<DWORD64> offsets(MDWMBlurGlassExt::g_hookFunList.size(), 0);
+			if (OffsetCache::LoadExact(dllName, names, offsets) != OffsetCache::Source::None)
+				continue;
+			if (!OffsetCache::Derive(dllName, names, offsets))
+				return false;
+		}
+		return true;
+	}
+
 	// 检查并自动下载符号文件
-	bool CheckAndDownloadSymbols()
+	void CheckAndDownloadSymbols()
 	{
 		// 加载配置文件
 		std::wstring configPath = Utils::GetCurrentDir() + L"\\data\\config.ini";
@@ -254,28 +340,27 @@ namespace MDWMBlurGlass
 
 		// 如果禁用了自动下载，直接返回
 		if (!config.autoDownloadSymbols)
-			return true;
+			return;
 
 		// 检查符号是否有效
 		SymbolDownloader downloader;
 		if (downloader.CheckSymbolsValid())
-			return true;
+			return;
+
+		// The PDBs don't match the installed build. A cumulative update usually leaves the hooked
+		// functions' code unchanged, so try to re-locate them from the cached previous build first.
+		if (CanResolveWithoutDownload())
+			return;
 
 		// 符号无效，显示下载对话框
-		return SymbolDownloadDialog::Show(nullptr);
+		g_symbolDownload = SymbolDownloadDialog::Show(nullptr);
 	}
 
 	void MHostStartProcess()
 	{
-		// 检查并自动下载符号文件
-		if (!CheckAndDownloadSymbols())
-		{
-			// 用户取消或下载失败时，显示错误信息
-			std::wstring errMsg = GetLanguageString(L"symdownfail");
-			if (errMsg.empty()) 
-				errMsg = L"Failed to download symbol files. The program may not work properly.";
-			MessageBoxW(nullptr, errMsg.c_str(), L"DWMBlurGlass", MB_ICONWARNING);
-		}
+		// 检查并自动下载符号文件. A failed download isn't reported here: if it leaves the symbols
+		// unusable, loading fails next and NotifyLoadFailure says why, in a single notification.
+		CheckAndDownloadSymbols();
 
 		WNDCLASSEXW wx = {};
 		wx.cbSize = sizeof(WNDCLASSEX);
@@ -303,6 +388,47 @@ namespace MDWMBlurGlass
 		UnregisterClassW(wx.lpszClassName, wx.hInstance);
 	}
 
+	// Resolve one module's offsets: offset cache for this exact build -> local PDB -> re-locate
+	// from a previous build's cached patterns.
+	bool LoadModuleOffsets(MHostModuleType type, const wchar_t* dllName)
+	{
+		const auto names = GetModuleNameList(type);
+		std::vector<DWORD64> offsets(MDWMBlurGlassExt::g_hookFunList.size(), 0);
+		auto apply = [&]
+		{
+			for (auto& [index, _] : names)
+				g_hookFunOffsetList[index] = offsets[index];
+		};
+
+		const auto cached = OffsetCache::LoadExact(dllName, names, offsets);
+		// Offsets derived by pattern are replaced by the PDB's once that PDB is available.
+		if (cached == OffsetCache::Source::Pdb || (cached == OffsetCache::Source::Pattern && !OffsetCache::LocalPdbExists(dllName)))
+		{
+			apply();
+			return true;
+		}
+
+		for (auto& [index, _] : names)
+			g_hookFunOffsetList[index] = 0;
+
+		const std::wstring symPath = L"SRV*" + Utils::GetCurrentDir() + L"\\data\\symbols";
+		const HRESULT hr = g_symResolver.Walk(dllName, "*!*", symPath, type == dwmcore ? SymCallback_Dwmcore : SymCallback_uDwm);
+		if (SUCCEEDED(hr))
+		{
+			for (auto& [index, _] : names)
+				offsets[index] = g_hookFunOffsetList[index];
+			OffsetCache::Record(dllName, names, offsets, OffsetCache::Source::Pdb);
+			return true;
+		}
+
+		if (cached == OffsetCache::Source::Pattern || OffsetCache::Derive(dllName, names, offsets))
+		{
+			apply();
+			return true;
+		}
+		return false;
+	}
+
 	bool LoadSymbolOffset()
 	{
 		g_dwmcoreFunCount = g_udwmFunCount = 0;
@@ -314,19 +440,21 @@ namespace MDWMBlurGlass
 				g_udwmFunCount++;
 		}
 
-		std::wstring symPath = L"SRV*" + Utils::GetCurrentDir() + L"\\data\\symbols";
-		HRESULT hr = g_symResolver.Walk(L"dwmcore.dll", "*!*", symPath, SymCallback_Dwmcore);
-		if (FAILED(hr))
-			return false;
-		hr = g_symResolver.Walk(L"uDwm.dll", "*!*", symPath, SymCallback_uDwm);
-		return SUCCEEDED(hr);
+		for (auto& [type, dllName] : g_symbolModules)
+		{
+			if (!LoadModuleOffsets(type, dllName))
+				return false;
+		}
+		return true;
 	}
 
-	bool LoadDWMExtensionBase(std::wstring& err, DWORD pid)
+	bool LoadDWMExtensionBase(std::wstring& err, DWORD pid, bool* symbolsFailed)
 	{
 		if(!LoadSymbolOffset())
 		{
 			err = GetLanguageString(L"symloadfail");
+			if (symbolsFailed)
+				*symbolsFailed = true;
 			return false;
 		}
 		const bool ret = Inject(GetProcessId(L"dwm.exe"), Utils::GetCurrentDir() + L"\\DWMBlurGlassExt.dll", err);

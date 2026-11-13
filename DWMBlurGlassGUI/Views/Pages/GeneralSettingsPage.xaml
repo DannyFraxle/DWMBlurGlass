@@ -138,6 +138,46 @@
                                                VerticalAlignment="Center"/>
                 </Grid>
 
+                <!-- Titlebar gradient -->
+                <Grid Margin="0,0,0,6">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="{Binding Lang[titlegradient]}" VerticalAlignment="Center" FontSize="12" />
+                    <ComboBox Grid.Column="1" MinWidth="220" SelectedIndex="{Binding SelectedGradientIndex}" VerticalAlignment="Center">
+                        <ComboBoxItem Content="{Binding Lang[gradientnone]}"/>
+                        <ComboBoxItem Content="{Binding Lang[gradienthorizontal]}"/>
+                        <ComboBoxItem Content="{Binding Lang[gradientvertical]}"/>
+                    </ComboBox>
+                </Grid>
+
+                <Grid Margin="0,0,0,6" IsEnabled="{Binding IsGradientEnabled}" Opacity="{Binding IsGradientEnabled, Converter={StaticResource BoolToOpacityConverter}}">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="{Binding Lang[gradientcolor]}" VerticalAlignment="Center" FontSize="12" />
+                    <controls:ColorSettingItem Grid.Column="1"
+                                               Color="{Binding ActiveGradientColor}"
+                                               PickColorCommand="{Binding PickColorCommand}"
+                                               CommandParameter="ActiveGradient"
+                                               VerticalAlignment="Center"/>
+                </Grid>
+
+                <Grid Margin="0,0,0,6" IsEnabled="{Binding IsGradientEnabled}" Opacity="{Binding IsGradientEnabled, Converter={StaticResource BoolToOpacityConverter}}">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="{Binding Lang[inactivegradientcolor]}" VerticalAlignment="Center" FontSize="12" />
+                    <controls:ColorSettingItem Grid.Column="1"
+                                               Color="{Binding InactiveGradientColor}"
+                                               PickColorCommand="{Binding PickColorCommand}"
+                                               CommandParameter="InactiveGradient"
+                                               VerticalAlignment="Center"/>
+                </Grid>
+
                 <Grid Margin="0,0,0,6">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*"/>
@@ -229,6 +269,7 @@
                                 <SolidColorBrush Color="{Binding ActiveTitleBarColor}" />
                             </Border.Background>
                             <Grid>
+                                <Border CornerRadius="8,8,0,0" Background="{Binding TitleBarGradientBrush}"/>
                                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="10,0,0,0">
                                     <ui:SymbolIcon Symbol="Gift24" FontSize="16" />
                                     <TextBlock Text="{Binding Lang[sampletitle]}" Margin="8,0,0,0" VerticalAlignment="Center" FontSize="12">

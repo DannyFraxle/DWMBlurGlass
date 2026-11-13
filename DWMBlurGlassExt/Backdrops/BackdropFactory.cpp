@@ -7,13 +7,14 @@
 #include "AcrylicBackdrop.hpp"
 #include "MicaBackdrop.hpp"
 #include "LiquidGlassBackdrop.hpp"
+#include "../Helper/ReconLog.h"
+#include "../Effects/ProbeEffect.hpp"
 
 namespace MDWMBlurGlassExt
 {
 	effectType g_type{ effectType::Blur };
 
 	wuc::CompositionSurfaceBrush g_materialTextureBrush{ nullptr };
-	wuc::CompositionBrush g_rimNormalMapBrush{ nullptr };
 	std::chrono::steady_clock::time_point g_currentTimeStamp{};
 	std::unordered_map<DWORD, wuc::CompositionBrush> g_backdropActiveBrushMap{};
 	std::unordered_map<DWORD, wuc::CompositionBrush> g_backdropInactiveBrushMap{};
@@ -106,105 +107,95 @@ namespace MDWMBlurGlassExt
 		return noiceBrush;
 	}
 
-	// Builds a small normal-map texture whose interior is neutral (no displacement)
-	// and whose border ramps the normal outward over 'rimThickness' pixels, then
-	// wraps it in a nine-grid brush so the refracting rim keeps a constant pixel
-	// width no matter how large the window is. Consumed by LiquidGlassBackdrop.
-	wuc::CompositionBrush CreateRimNormalMapBrush(int rimThickness)
+	// Asks Composition which D2D effects it will actually build, and writes the
+	// answer to effects.log. Runs once, off the render path, only when
+	// glassProbeEffects is set in config.ini.
+	//
+	// This exists because guessing costs a dwm restart per guess, and because the
+	// error messages cannot be taken at face value: DistantSpecular is refused
+	// with "Invalid effect input" even when its input is a self-contained colour
+	// source, so only an actual construction attempt settles the question.
+	void ProbeEffectSupport(const wuc::Compositor& compositor)
 	{
-		rimThickness = std::clamp(rimThickness, 1, 64);
-
-		com_ptr<DCompPrivate::IDCompositionDesktopDevicePartner> dcompDevice{ nullptr };
-		copy_from_abi(dcompDevice, DWM::CDesktopManager::s_pDesktopManagerInstance->GetDCompositionInteropDevice());
-		auto compositor{ dcompDevice.as<wuc::Compositor>() };
-
-		winrt::Windows::UI::Composition::CompositionGraphicsDevice graphicsDevice{ nullptr };
-		THROW_IF_FAILED(
-			compositor.as<ABI::Windows::UI::Composition::ICompositorInterop>()->CreateGraphicsDevice(
-				DWM::CDesktopManager::s_pDesktopManagerInstance->GetD2DDevice(),
-				reinterpret_cast<ABI::Windows::UI::Composition::ICompositionGraphicsDevice**>(winrt::put_abi(graphicsDevice))
-			)
-		);
-
-		// 1px neutral centre + rimThickness border on each side; nine-grid insets
-		// equal rimThickness so only the border is preserved and the centre stretches.
-		const int side{ rimThickness * 2 + 1 };
-		auto compositionSurface
+		struct Candidate
 		{
-			graphicsDevice.CreateDrawingSurface(
-				{ static_cast<float>(side), static_cast<float>(side) },
-				winrt::Windows::Graphics::DirectX::DirectXPixelFormat::B8G8R8A8UIntNormalized,
-				winrt::Windows::Graphics::DirectX::DirectXAlphaMode::Premultiplied
-			)
+			const GUID* clsid;
+			const char* name;
+			int inputs;
 		};
 
-		// CPU-fill the normal map. Channel 0.5 (=128) means "no displacement".
-		// Left edge pushes +X (sample rightward => magnify inward), right edge -X;
-		// top pushes +Y, bottom -Y. Ramp smoothly to neutral at the inner rim edge.
-		std::vector<uint32_t> pixels(static_cast<size_t>(side) * side);
-		auto encode = [](float nx, float ny) -> uint32_t
+		static const Candidate candidates[]
 		{
-			auto toByte = [](float n) -> uint32_t
-			{
-				float v = std::clamp(0.5f + n * 0.5f, 0.f, 1.f);
-				return static_cast<uint32_t>(v * 255.f + 0.5f);
-			};
-			uint32_t r = toByte(nx);
-			uint32_t g = toByte(ny);
-			// premultiplied BGRA, opaque: A=255, RGB unchanged
-			return (0xFFu << 24) | (r << 16) | (g << 8) | 0x00u;
+			// Already known to work; included as a control - if these fail the
+			// probe itself is wrong.
+			{ &CLSID_D2D1GaussianBlur,        "GaussianBlur",        1 },
+			{ &CLSID_D2D1ColorMatrix,         "ColorMatrix",         1 },
+			{ &CLSID_D2D1Composite,           "Composite",           2 },
+
+			// The interesting ones: a blur that gathers along a direction, and
+			// the transforms that magnify the backdrop toward the rim.
+			{ &CLSID_D2D1DirectionalBlur,     "DirectionalBlur",     1 },
+			{ &CLSID_D2D1Scale,               "Scale",               1 },
+			{ &CLSID_D2D12DAffineTransform,   "2DAffineTransform",   1 },
+			{ &CLSID_D2D1Border,              "Border",              1 },
+			{ &CLSID_D2D1Crop,                "Crop",                1 },
+			{ &CLSID_D2D1Tile,                "Tile",                1 },
+
+			// Masking, for confining an effect to the rim band.
+			{ &CLSID_D2D1AlphaMask,           "AlphaMask",           2 },
+			{ &CLSID_D2D1ArithmeticComposite, "ArithmeticComposite", 2 },
+			{ &CLSID_D2D1Blend,               "Blend",               2 },
+
+			// Refraction and shading, all previously assumed one way or another.
+			{ &CLSID_D2D1DisplacementMap,     "DisplacementMap",     2 },
+			{ &CLSID_D2D1DistantSpecular,     "DistantSpecular",     1 },
+			{ &CLSID_D2D1PointSpecular,       "PointSpecular",       1 },
+			{ &CLSID_D2D1SpotSpecular,        "SpotSpecular",        1 },
+			{ &CLSID_D2D1DistantDiffuse,      "DistantDiffuse",      1 },
+			{ &CLSID_D2D1PointDiffuse,        "PointDiffuse",        1 },
+			{ &CLSID_D2D1Morphology,          "Morphology",          1 },
+			{ &CLSID_D2D1ConvolveMatrix,      "ConvolveMatrix",      1 },
+			{ &CLSID_D2D1Emboss,              "Emboss",              1 },
+			{ &CLSID_D2D1EdgeDetection,       "EdgeDetection",       1 },
+			{ &CLSID_D2D1Shadow,              "Shadow",              1 },
+			{ &CLSID_D2D1Sharpen,             "Sharpen",             1 },
 		};
-		for (int y = 0; y < side; ++y)
+
+		ReconLog::Start(L"C:\\ProgramData\\DWMBlurGlassRecon\\effects.log");
+		ReconLog::Write("=== Composition effect support, as seen from inside dwm.exe ===");
+
+		for (const auto& candidate : candidates)
 		{
-			for (int x = 0; x < side; ++x)
+			try
 			{
-				// signed distance into the rim from each edge, 0..1 (1 at outer edge)
-				float leftT   = x < rimThickness ? (rimThickness - x) / static_cast<float>(rimThickness) : 0.f;
-				float rightT  = x >= side - rimThickness ? (x - (side - 1 - rimThickness)) / static_cast<float>(rimThickness) : 0.f;
-				float topT    = y < rimThickness ? (rimThickness - y) / static_cast<float>(rimThickness) : 0.f;
-				float bottomT = y >= side - rimThickness ? (y - (side - 1 - rimThickness)) / static_cast<float>(rimThickness) : 0.f;
-				// square the profile for a lens-like curve concentrated at the very edge
-				auto curve = [](float t) { return t * t; };
-				float nx = curve(leftT) - curve(rightT);
-				float ny = curve(topT) - curve(bottomT);
-				pixels[static_cast<size_t>(y) * side + x] = encode(nx, ny);
+				auto sourceA{ winrt::make_self<ColorSourceEffect>() };
+				sourceA->SetName(L"ProbeSourceA");
+				auto sourceB{ winrt::make_self<ColorSourceEffect>() };
+				sourceB->SetName(L"ProbeSourceB");
+
+				auto probe{ winrt::make_self<ProbeEffect>(*candidate.clsid) };
+				probe->SetName(L"Probe");
+				probe->SetInput(0, *sourceA);
+				if (candidate.inputs > 1)
+					probe->SetInput(1, *sourceB);
+
+				compositor.CreateEffectFactory(*probe);
+				ReconLog::Write("  %-20s OK", candidate.name);
+			}
+			catch (const winrt::hresult_error& e)
+			{
+				const auto message{ winrt::to_string(e.message()) };
+				ReconLog::Write("  %-20s REJECTED hr=0x%08X %s",
+					candidate.name, static_cast<unsigned>(e.code()), message.c_str());
+			}
+			catch (...)
+			{
+				ReconLog::Write("  %-20s REJECTED (non-hresult)", candidate.name);
 			}
 		}
 
-		auto drawingSurfaceInterop{ compositionSurface.as<ABI::Windows::UI::Composition::ICompositionDrawingSurfaceInterop>() };
-		POINT offset{ 0, 0 };
-		com_ptr<ID2D1DeviceContext> d2dContext{ nullptr };
-		THROW_IF_FAILED(
-			drawingSurfaceInterop->BeginDraw(nullptr, IID_PPV_ARGS(d2dContext.put()), &offset)
-		);
-		d2dContext->Clear();
-		com_ptr<ID2D1Bitmap1> d2dBitmap{ nullptr };
-		D2D1_SIZE_U bmpSize{ static_cast<UINT32>(side), static_cast<UINT32>(side) };
-		THROW_IF_FAILED(
-			d2dContext->CreateBitmap(
-				bmpSize,
-				pixels.data(),
-				static_cast<UINT32>(side * sizeof(uint32_t)),
-				D2D1::BitmapProperties1(
-					D2D1_BITMAP_OPTIONS_NONE,
-					D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED)
-				),
-				d2dBitmap.put()
-			)
-		);
-		d2dContext->DrawBitmap(
-			d2dBitmap.get(),
-			D2D1::RectF(static_cast<float>(offset.x), static_cast<float>(offset.y),
-				static_cast<float>(offset.x + side), static_cast<float>(offset.y + side))
-		);
-		THROW_IF_FAILED(drawingSurfaceInterop->EndDraw());
-
-		auto surfaceBrush{ compositor.CreateSurfaceBrush(compositionSurface) };
-		auto nineGrid{ compositor.CreateNineGridBrush() };
-		nineGrid.Source(surfaceBrush);
-		nineGrid.SetInsets(static_cast<float>(rimThickness));
-		nineGrid.IsCenterHollow(false);
-		return nineGrid;
+		ReconLog::Write("=== end ===");
+		ReconLog::Flush();
 	}
 
 	wuc::CompositionBrush BackdropFactory::GetOrCreateBackdropBrush(
@@ -221,7 +212,7 @@ namespace MDWMBlurGlassExt
 		}
 
 		auto& map{ active ? g_backdropActiveBrushMap : g_backdropInactiveBrushMap };
-		auto it{ map.find(color) };
+		auto it{ g_type == effectType::LiquidGlass ? map.end() : map.find(color) };
 		// find cached brush
 		if (it != map.end())
 		{
@@ -334,22 +325,34 @@ namespace MDWMBlurGlassExt
 		}
 		case effectType::LiquidGlass:
 		{
-			// The rim map is built once in RefreshConfig - never here. This runs on
-			// DWM's render path, so it must not create devices/surfaces or let an
-			// exception escape into dwm.exe. If anything is amiss, degrade to plain
-			// blur rather than taking the compositor down with us.
-			if (g_rimNormalMapBrush)
+			// Runs on DWM's render path: nothing may escape. If Composition
+			// refuses the graph, degrade to the plain blur rather than taking the
+			// compositor down with us - and say why, once, since a silent
+			// fallback looks exactly like the material doing nothing.
+			if (LiquidGlassBackdrop::IsSupported())
 			{
 				try
 				{
 					brush = LiquidGlassBackdrop::CreateBrush(
 						compositor,
-						g_rimNormalMapBrush,
 						winrtColor,
 						glassOpacity,
 						g_configData.customBlurAmount,
-						g_configData.glassRefractionAmount
+						g_configData.glassIntensity
 					);
+				}
+				catch (const winrt::hresult_error& e)
+				{
+					static std::atomic_bool reported{ false };
+					if (!reported.exchange(true))
+					{
+						ReconLog::Start(L"C:\\ProgramData\\DWMBlurGlassRecon\\material.log");
+						const auto message{ winrt::to_string(e.message()) };
+						ReconLog::Write("[material] LiquidGlass brush FAILED hr=0x%08X: %s",
+							static_cast<unsigned>(e.code()), message.c_str());
+						ReconLog::Flush();
+					}
+					brush = nullptr;
 				}
 				catch (...)
 				{
@@ -372,7 +375,10 @@ namespace MDWMBlurGlassExt
 			break;
 		}
 
-		if (!policy)
+		// LiquidGlass is deliberately NOT cached. Its lip gradients are laid out
+		// in pixels for one particular window, so a brush shared between windows
+		// would draw every other window's lip in the wrong place.
+		if (!policy && g_type != effectType::LiquidGlass)
 		{
 			map.insert_or_assign(color, brush);
 		}
@@ -390,7 +396,6 @@ namespace MDWMBlurGlassExt
 		g_backdropActiveBrushMap.clear();
 		g_backdropInactiveBrushMap.clear();
 		g_materialTextureBrush = nullptr;
-		g_rimNormalMapBrush = nullptr;
 	}
 
 	void BackdropFactory::RefreshConfig()
@@ -400,30 +405,23 @@ namespace MDWMBlurGlassExt
 			g_materialTextureBrush = CreateMaterialTextureBrush();
 		}
 
-		// Build the rim map here (same place as the material texture) and never on the
-		// render path. On failure leave it null - GetOrCreateBackdropBrush then falls
-		// back to plain blur instead of crashing dwm.exe.
-		g_rimNormalMapBrush = nullptr;
-		if (g_configData.effectType == effectType::LiquidGlass)
+		if (g_configData.glassProbeEffects)
 		{
 			try
 			{
-				g_rimNormalMapBrush = CreateRimNormalMapBrush(g_configData.glassRimThickness);
+				com_ptr<DCompPrivate::IDCompositionDesktopDevicePartner> dcompDevice{ nullptr };
+				copy_from_abi(dcompDevice, DWM::CDesktopManager::s_pDesktopManagerInstance->GetDCompositionInteropDevice());
+				ProbeEffectSupport(dcompDevice.as<wuc::Compositor>());
 			}
 			catch (...)
 			{
-				g_rimNormalMapBrush = nullptr;
 			}
 		}
 
 		g_type = g_configData.effectType;
-		// liquid glass needs the raw-D2D blur path (CCustomBlur), which only
-		// exists on windows 10; win11 renders the blur as a d3d render graph
-		// with no ID2D1Image to refract, so the effect is unavailable there
-		if (os::buildNumber >= 22000 && g_type == effectType::LiquidGlass)
-		{
-			g_type = effectType::Blur;
-		}
+		// Liquid glass is a plain Composition effect brush now - a blurred pane
+		// with a lit rim - so it works on every build this project supports.
+		// Nothing to downgrade.
 		// mica is not available in windows 10
 		if (os::buildNumber < 22000 && g_type == effectType::Mica)
 		{

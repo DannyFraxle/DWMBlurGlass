@@ -61,7 +61,15 @@ namespace MDWMBlurGlassExt
 				return E_POINTER;
 			}
 
-			m_effectSources.at(index).as<ABI::Windows::Graphics::Effects::IGraphicsEffectSource>().copy_to(source);
+			// Never let a C++ exception cross this ABI boundary - it lands in
+			// DWM's compositor.
+			auto it{ m_effectSources.find(index) };
+			if (it == m_effectSources.end())
+			{
+				*source = nullptr;
+				return E_BOUNDS;
+			}
+			it->second.as<ABI::Windows::Graphics::Effects::IGraphicsEffectSource>().copy_to(source);
 			return S_OK;
 		}
 		IFACEMETHOD(GetPropertyCount)(UINT* count) override
@@ -81,7 +89,17 @@ namespace MDWMBlurGlassExt
 				return E_POINTER;
 			}
 
-			*value = m_properties.at(index).as<ABI::Windows::Foundation::IPropertyValue>().detach();
+			// Composition asks for EVERY property the D2D effect defines, whatever
+			// GetPropertyCount says, so an effect wrapper must set all of them. A
+			// missing one used to throw std::out_of_range straight into DWM (which
+			// reported it as "The parameter is incorrect"); report it instead.
+			auto it{ m_properties.find(index) };
+			if (it == m_properties.end())
+			{
+				*value = nullptr;
+				return E_BOUNDS;
+			}
+			*value = it->second.as<ABI::Windows::Foundation::IPropertyValue>().detach();
 			return S_OK;
 		}
 		IFACEMETHOD(GetNamedPropertyMapping)(LPCWSTR name, UINT* index, NamedProperty::GRAPHICS_EFFECT_PROPERTY_MAPPING* mapping) override

@@ -7,6 +7,7 @@
 #include "RefractionRecon.h"
 #include "HookDef.h"
 #include "CommonDef.h"
+#include "../Helper/ReconLog.h"
 #include <cstdio>
 #include <cstdarg>
 #include <atomic>
@@ -29,18 +30,20 @@ namespace MDWMBlurGlassExt::RefractionRecon
 	static constexpr wchar_t kLogDir[] = L"C:\\ProgramData\\DWMBlurGlassRecon";
 	static constexpr wchar_t kLogPath[] = L"C:\\ProgramData\\DWMBlurGlassRecon\\recon.log";
 
+	// These probes run on DWM render threads. The original implementation
+	// opened and closed the log file per line, which stalled that thread badly
+	// enough to crash-loop dwm.exe; ReconLog buffers in memory instead and
+	// flushes from its own worker thread.
 	static void LogLine(const char* fmt, ...)
 	{
-		CreateDirectoryW(kLogDir, nullptr);
-		FILE* f = nullptr;
-		if (_wfopen_s(&f, kLogPath, L"a+") != 0 || !f)
-			return;
+		char line[1024];
 		va_list ap;
 		va_start(ap, fmt);
-		vfprintf(f, fmt, ap);
+		const int n = vsnprintf(line, sizeof(line), fmt, ap);
 		va_end(ap);
-		fputc('\n', f);
-		fclose(f);
+		if (n < 0)
+			return;
+		ReconLog::Write("%s", line);
 	}
 
 	// ---- read-only memory probes -------------------------------------------
@@ -223,6 +226,7 @@ namespace MDWMBlurGlassExt::RefractionRecon
 		g_nExecuteBlur = 0;
 		g_nCustomBlurDraw = 0;
 
+		ReconLog::Start(kLogPath);
 		LogLine("================================================================");
 		LogLine("recon attach  build=%u  effectType=%d  blurMethod=%d  customAmount=%d  scaleOptimizer=%d",
 			os::buildNumber, (int)g_configData.effectType, (int)g_configData.blurmethod,
@@ -280,12 +284,19 @@ namespace MDWMBlurGlassExt::RefractionRecon
 
 		LogLine("recon detach: ExecuteBlur calls=%d  CCustomBlur::Draw calls=%d",
 			g_nExecuteBlur.load(), g_nCustomBlurDraw.load());
+		ReconLog::Stop();
 		g_startup = false;
 	}
 
 	void Refresh()
 	{
-		const bool want = (g_configData.effectType == effectType::LiquidGlass);
+		// The D2D-path recon has already returned its answer (see the header),
+		// and these probes cost render-thread work, so they now stay off unless
+		// someone deliberately drops a marker file next to the log.
+		const bool enabled =
+			GetFileAttributesW(L"C:\\ProgramData\\DWMBlurGlassRecon\\enable_d2d_recon")
+			!= INVALID_FILE_ATTRIBUTES;
+		const bool want = enabled && (g_configData.effectType == effectType::LiquidGlass);
 		if (want && !g_startup) Attach();
 		else if (!want && g_startup) Detach();
 	}

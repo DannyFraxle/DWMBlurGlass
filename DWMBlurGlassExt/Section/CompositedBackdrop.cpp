@@ -3,7 +3,9 @@
 #include "CustomBackdropEffect.h"
 #include "VersionHelper.h"
 #include "CommonDef.h"
+#include "../Backdrops/LiquidGlassBackdrop.hpp"
 #include "../Helper/CanvasGeometry.hpp"
+#include "GlassScene.h"
 #include <windowsx.h>
 
 namespace MDWMBlurGlassExt
@@ -54,6 +56,16 @@ namespace MDWMBlurGlassExt
 		m_containerVisual = nullptr;
 		m_backdropBrush = nullptr;
 		m_previousBackdropBrush = nullptr;
+		m_glassLaidOutBrush = nullptr;
+		GlassScene::RemoveGlass(this);
+
+		m_gradientVisual = nullptr;
+		m_gradientBrush = nullptr;
+		m_gradientStartStop = nullptr;
+		m_gradientEndStop = nullptr;
+		m_gradientDirection = gradientDirection::None;
+		m_gradientColor = 0;
+		m_gradientRect = {};
 
 		m_reflectionVisual->UninitializeVisual();
 		CBackdropVisual::UninitializeVisual();
@@ -323,6 +335,134 @@ namespace MDWMBlurGlassExt
 		m_previousBackdropBrush = m_backdropBrush;
 	}
 
+	// Lays a linear gradient over the caption, above the backdrop and below the
+	// reflection, title text and buttons. It runs from fully clear at the start
+	// edge to the configured colour at the far edge, so the start shows the
+	// normal (blend-coloured) titlebar and the gradient fades to the new colour
+	// across it - an opaque blend colour plus an opaque gradient colour gives
+	// the solid Windows 98 look, translucent ones keep the blur showing.
+	//
+	// Runs on DWM's render path: nothing may escape.
+	void CCompositedBackdropVisual::UpdateTitleGradient() try
+	{
+		const auto direction
+		{
+			m_kind == CompositedBackdropKind::Accent ?
+			gradientDirection::None :
+			g_configData.titleGradient
+		};
+
+		// The caption, in the container's coordinates. The region and the
+		// caption rect share the window-relative space the container is
+		// offset into; clamp to the region so the sprite never pokes out of
+		// an unclipped (rectangular) backdrop.
+		RECT box{};
+		if (direction != gradientDirection::None)
+		{
+			RECT regionBox{};
+			RECT caption{};
+			if (GetRgnBox(m_compositedRgn.get(), &regionBox) != NULLREGION &&
+				IntersectRect(&caption, &m_captionRect, &regionBox))
+			{
+				box =
+				{
+					caption.left - regionBox.left,
+					caption.top - regionBox.top,
+					caption.right - regionBox.left,
+					caption.bottom - regionBox.top
+				};
+			}
+		}
+
+		if (direction == gradientDirection::None || IsRectEmpty(&box))
+		{
+			if (m_gradientVisual)
+			{
+				m_gradientVisual.IsVisible(false);
+			}
+			return;
+		}
+
+		COLORREF color{};
+		if (m_data->IsUsingDarkMode())
+			color = m_activate ? g_configData.activeGradientColorDark : g_configData.inactiveGradientColorDark;
+		else
+			color = m_activate ? g_configData.activeGradientColor : g_configData.inactiveGradientColor;
+
+		// Gradient stops are straight colours, so the clear end keeps the far
+		// end's RGB - interpolating towards transparent black would darken the
+		// middle of the bar.
+		const auto endColor{ MakeWinrtColor(color) };
+		const wu::Color startColor{ 0, endColor.R, endColor.G, endColor.B };
+
+		auto compositor{ m_dcompDevice.as<wuc::Compositor>() };
+		if (!m_gradientVisual)
+		{
+			m_gradientStartStop = compositor.CreateColorGradientStop(0.f, startColor);
+			m_gradientEndStop = compositor.CreateColorGradientStop(1.f, endColor);
+			m_gradientBrush = compositor.CreateLinearGradientBrush();
+			m_gradientBrush.ColorStops().Append(m_gradientStartStop);
+			m_gradientBrush.ColorStops().Append(m_gradientEndStop);
+			m_gradientColor = color;
+
+			m_gradientVisual = compositor.CreateSpriteVisual();
+			m_gradientVisual.Brush(m_gradientBrush);
+			m_containerVisual.Children().InsertAbove(m_gradientVisual, m_spriteVisual);
+
+			m_gradientDirection = gradientDirection::None;
+			m_gradientRect = {};
+		}
+		m_gradientVisual.IsVisible(true);
+
+		if (!EqualRect(&box, &m_gradientRect))
+		{
+			m_gradientVisual.Offset({ static_cast<float>(box.left), static_cast<float>(box.top), 0.f });
+			m_gradientVisual.Size({ static_cast<float>(wil::rect_width(box)), static_cast<float>(wil::rect_height(box)) });
+			m_gradientRect = box;
+		}
+
+		if (direction != m_gradientDirection)
+		{
+			// Relative mapping: 0..1 spans the sprite, which is exactly the
+			// caption, so the same brush fits any window size.
+			m_gradientBrush.StartPoint({ 0.f, 0.f });
+			m_gradientBrush.EndPoint(direction == gradientDirection::Horizontal ? wfn::float2{ 1.f, 0.f } : wfn::float2{ 0.f, 1.f });
+			m_gradientDirection = direction;
+		}
+
+		if (color != m_gradientColor)
+		{
+			// Follow the backdrop's own crossfade when the window is
+			// (de)activated, so the bar does not snap ahead of the blur.
+			const bool animate{ m_shouldPlayCrossFadeAnimation && g_configData.crossFade && g_configData.crossfadeTime > 0 };
+			const auto fromColor{ MakeWinrtColor(m_gradientColor) };
+			auto apply = [&](const wuc::CompositionColorGradientStop& stop, wu::Color from, wu::Color to)
+			{
+				if (animate)
+				{
+					try
+					{
+						auto animation{ compositor.CreateColorKeyFrameAnimation() };
+						animation.InsertKeyFrame(0.f, from);
+						animation.InsertKeyFrame(1.f, to);
+						animation.Duration(std::chrono::milliseconds{ g_configData.crossfadeTime });
+						stop.StartAnimation(L"Color", animation);
+						return;
+					}
+					catch (...)
+					{
+					}
+				}
+				stop.StopAnimation(L"Color");
+				stop.Color(to);
+			};
+			apply(m_gradientStartStop, { 0, fromColor.R, fromColor.G, fromColor.B }, startColor);
+			apply(m_gradientEndStop, fromColor, endColor);
+			m_gradientColor = color;
+		}
+	}
+	CATCH_LOG_RETURN()
+
 	void CCompositedBackdropVisual::CancelAnimationCompleteWait()
 	{
 		if (m_waitingForAnimationCompleteBatch)
@@ -499,7 +639,10 @@ namespace MDWMBlurGlassExt
 	void CCompositedBackdropVisual::ValidateVisual()
 	{
 		if (GetSrcWindow()->IsTrullyMinimized())
+		{
+			GlassScene::RemoveGlass(this);
 			return;
+		}
 
 		if (m_visible)
 		{
@@ -515,7 +658,60 @@ namespace MDWMBlurGlassExt
 		{
 			OnBackdropBrushUpdated();
 			m_reflectionVisual->ValidateVisual();
+			UpdateTitleGradient();
+
+			// Lay this window's glass lip out in pixels. The brush cannot do it
+			// itself: its gradients are relative to the visual, and the lip has to
+			// stay the same width however big the window is.
+			//
+			// Only edges of the backdrop that are real window edges get a lip - a
+			// caption-only backdrop meets the client area along its bottom, and a
+			// lit edge there would read as a seam. The region and m_windowRect
+			// share a coordinate space; the slack absorbs resize borders.
+			if (g_configData.effectType == effectType::LiquidGlass && m_backdropBrush && m_containerVisual)
+			{
+				const auto size{ m_containerVisual.Size() };
+				RECT regionBox{};
+				GetRgnBox(m_compositedRgn.get(), &regionBox);
+				constexpr LONG slack{ 16 };
+				uint8_t edges{ 0 };
+				if (regionBox.left - m_windowRect.left <= slack) edges |= LiquidGlassBackdrop::LeftEdge;
+				if (regionBox.top - m_windowRect.top <= slack) edges |= LiquidGlassBackdrop::TopEdge;
+				if (m_windowRect.right - regionBox.right <= slack) edges |= LiquidGlassBackdrop::RightEdge;
+				if (m_windowRect.bottom - regionBox.bottom <= slack) edges |= LiquidGlassBackdrop::BottomEdge;
+
+				if (m_glassLaidOutBrush != m_backdropBrush || m_glassLaidOutSize != size || m_glassLaidOutEdges != edges)
+				{
+					LiquidGlassBackdrop::UpdateLayout(
+						m_backdropBrush,
+						size.x,
+						size.y,
+						edges,
+						g_configData.glassRimThickness,
+						g_configData.glassIntensity);
+					m_glassLaidOutBrush = m_backdropBrush;
+					m_glassLaidOutSize = size;
+					m_glassLaidOutEdges = edges;
+				}
+
+				// And tell the edge pinch (Windows 11, drawn on the finished
+				// frame) where this glass is on screen. The region lives in the
+				// same window-relative space as m_windowRect; the same rect asked
+				// for without erasing the offset is in screen pixels, so the
+				// difference between the two places the region on screen.
+				RECT screenRect{};
+				if (GlassScene::IsEnabled() && GetSrcWindow()->GetActualWindowRect(&screenRect, false, true, false))
+				{
+					const LONG dx{ screenRect.left - m_windowRect.left };
+					const LONG dy{ screenRect.top - m_windowRect.top };
+					const RECT glass{ regionBox.left + dx, regionBox.top + dy, regionBox.right + dx, regionBox.bottom + dy };
+					GlassScene::UpdateGlass(this, m_data->GetHWND(), glass, edges, m_activate, m_spriteVisual);
+				}
+				return;
+			}
 		}
+		// Not visible, or not liquid glass: no pinch for this window.
+		GlassScene::RemoveGlass(this);
 	}
 
 	void CCompositedBackdropVisual::UpdateNCBackground()
@@ -612,6 +808,17 @@ namespace MDWMBlurGlassExt
 
 		m_spriteVisual.Brush(m_source->m_spriteVisual.Brush());
 		m_containerVisual.Children().InsertAtBottom(m_spriteVisual);
+
+		// Carry the titlebar gradient across too; the brush can be shared.
+		if (m_source->m_gradientVisual && m_source->m_gradientVisual.IsVisible())
+		{
+			auto gradientVisual{ compositor.CreateSpriteVisual() };
+			gradientVisual.Brush(m_source->m_gradientBrush);
+			gradientVisual.Offset(m_source->m_gradientVisual.Offset());
+			gradientVisual.Size(m_source->m_gradientVisual.Size());
+			m_containerVisual.Children().InsertAbove(gradientVisual, m_spriteVisual);
+		}
+
 		m_visualCollection.InsertAtBottom(m_containerVisual);
 
 		return S_OK;

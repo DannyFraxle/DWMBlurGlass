@@ -61,7 +61,24 @@ namespace MDWMBlurGlassExt
 		std::optional<RECT> m_accentRect{ std::nullopt };
 		wil::unique_hrgn m_compositedRgn{ nullptr };
 		wuc::CompositionPathGeometry m_pathGeometry{ nullptr };
-	
+
+		// LiquidGlass: what the lip was last laid out for, so it is only redone
+		// when the brush, the size or the set of real window edges changes.
+		wuc::CompositionBrush m_glassLaidOutBrush{ nullptr };
+		wfn::float2 m_glassLaidOutSize{};
+		uint8_t m_glassLaidOutEdges{ 0 };
+
+		// Titlebar gradient: a second sprite above the backdrop, covering the
+		// caption only. Created the first time it is needed, so it costs
+		// nothing while the option is off.
+		wuc::SpriteVisual m_gradientVisual{ nullptr };
+		wuc::CompositionLinearGradientBrush m_gradientBrush{ nullptr };
+		wuc::CompositionColorGradientStop m_gradientStartStop{ nullptr };
+		wuc::CompositionColorGradientStop m_gradientEndStop{ nullptr };
+		MDWMBlurGlass::gradientDirection m_gradientDirection{ MDWMBlurGlass::gradientDirection::None };
+		COLORREF m_gradientColor{ 0 };
+		RECT m_gradientRect{};
+
 		HRESULT InitializeVisual() override;
 		void UninitializeVisual() override;
 
@@ -71,6 +88,7 @@ namespace MDWMBlurGlassExt
 		void OnBackdropRegionChanged(wil::unique_hrgn& newBackdropRegion);
 		void OnBackdropBrushUpdated();
 		void OnBackdropBrushChanged();
+		void UpdateTitleGradient();
 		void CancelAnimationCompleteWait();
 
 		POINT GetClientAreaOffset() const;

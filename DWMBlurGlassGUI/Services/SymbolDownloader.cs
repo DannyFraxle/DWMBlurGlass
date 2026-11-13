@@ -1,5 +1,7 @@
 using System;
+using System.Diagnostics;
 using System.IO;
+using System.Net;
 using System.Net.Http;
 using System.Runtime.InteropServices;
 using System.Threading;
@@ -70,7 +72,7 @@ namespace DWMBlurGlassGUI.Services
         /// <summary>
         /// Download symbols for both dwmcore.dll and uDwm.dll
         /// </summary>
-        public async Task<bool> DownloadSymbolsAsync(IProgress<DownloadProgressEventArgs>? progress = null, CancellationToken cancellationToken = default)
+        public async Task<SymbolDownloadResult> DownloadSymbolsAsync(IProgress<DownloadProgressEventArgs>? progress = null, CancellationToken cancellationToken = default)
         {
             try
             {
@@ -94,30 +96,34 @@ namespace DWMBlurGlassGUI.Services
                     progress?.Report(progressArgs);
                     ProgressChanged?.Invoke(this, progressArgs);
 
-                    bool success = await DownloadSingleSymbolAsync(dllName, progress, cancellationToken);
-                    if (!success)
-                        return false;
+                    var result = await DownloadSingleSymbolAsync(dllName, progress, cancellationToken);
+                    if (result.Status != SymbolDownloadStatus.Success)
+                        return result;
                 }
 
-                return true;
+                return new SymbolDownloadResult(SymbolDownloadStatus.Success);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
             }
             catch (Exception)
             {
-                return false;
+                return new SymbolDownloadResult(SymbolDownloadStatus.Failed);
             }
         }
 
-        private async Task<bool> DownloadSingleSymbolAsync(string dllName, IProgress<DownloadProgressEventArgs>? progress, CancellationToken cancellationToken)
+        private async Task<SymbolDownloadResult> DownloadSingleSymbolAsync(string dllName, IProgress<DownloadProgressEventArgs>? progress, CancellationToken cancellationToken)
         {
             try
             {
                 string systemPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), dllName);
                 if (!File.Exists(systemPath))
-                    return false;
+                    return new SymbolDownloadResult(SymbolDownloadStatus.Failed, dllName);
 
                 var peInfo = GetPEInfo(systemPath);
                 if (peInfo == null)
-                    return false;
+                    return new SymbolDownloadResult(SymbolDownloadStatus.Failed, dllName);
 
                 string pdbName = Path.GetFileNameWithoutExtension(dllName) + ".pdb";
                 string guidAge = peInfo.Value.Guid.ToString("N").ToUpperInvariant() + peInfo.Value.Age.ToString();
@@ -127,45 +133,84 @@ namespace DWMBlurGlassGUI.Services
 
                 // Check if already exists
                 if (File.Exists(localPath))
-                    return true;
-
-                Directory.CreateDirectory(localDir);
+                    return new SymbolDownloadResult(SymbolDownloadStatus.Success);
 
                 using var response = await _httpClient.GetAsync(downloadUrl, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+
+                // The symbol server answers 404 when Microsoft has not (yet) published the PDB
+                // for this exact build - typical for a few days after a Windows update.
+                if (response.StatusCode == HttpStatusCode.NotFound)
+                    return new SymbolDownloadResult(SymbolDownloadStatus.NotPublished, dllName, GetFileVersion(systemPath));
+
                 response.EnsureSuccessStatusCode();
+
+                Directory.CreateDirectory(localDir);
 
                 var totalBytes = response.Content.Headers.ContentLength ?? -1;
                 long bytesReceived = 0;
 
-                using var contentStream = await response.Content.ReadAsStreamAsync(cancellationToken);
-                using var fileStream = new FileStream(localPath, FileMode.Create, FileAccess.Write, FileShare.None, 8192, true);
-
-                var buffer = new byte[8192];
-                int bytesRead;
-
-                while ((bytesRead = await contentStream.ReadAsync(buffer, cancellationToken)) > 0)
+                // Download to a temp file and move it into place only when complete, so an
+                // interrupted download never leaves a truncated PDB that passes the File.Exists check.
+                string tempPath = localPath + ".download";
+                try
                 {
-                    await fileStream.WriteAsync(buffer.AsMemory(0, bytesRead), cancellationToken);
-                    bytesReceived += bytesRead;
-
-                    var progressArgs = new DownloadProgressEventArgs
+                    using (var contentStream = await response.Content.ReadAsStreamAsync(cancellationToken))
+                    using (var fileStream = new FileStream(tempPath, FileMode.Create, FileAccess.Write, FileShare.None, 8192, true))
                     {
-                        FileName = dllName,
-                        CurrentFile = Array.IndexOf(TargetDlls, dllName) + 1,
-                        TotalFiles = TargetDlls.Length,
-                        BytesReceived = bytesReceived,
-                        TotalBytes = totalBytes,
-                        ProgressPercentage = totalBytes > 0 ? (int)(bytesReceived * 100 / totalBytes) : 0
-                    };
-                    progress?.Report(progressArgs);
-                    ProgressChanged?.Invoke(this, progressArgs);
+                        var buffer = new byte[8192];
+                        int bytesRead;
+
+                        while ((bytesRead = await contentStream.ReadAsync(buffer, cancellationToken)) > 0)
+                        {
+                            await fileStream.WriteAsync(buffer.AsMemory(0, bytesRead), cancellationToken);
+                            bytesReceived += bytesRead;
+
+                            var progressArgs = new DownloadProgressEventArgs
+                            {
+                                FileName = dllName,
+                                CurrentFile = Array.IndexOf(TargetDlls, dllName) + 1,
+                                TotalFiles = TargetDlls.Length,
+                                BytesReceived = bytesReceived,
+                                TotalBytes = totalBytes,
+                                ProgressPercentage = totalBytes > 0 ? (int)(bytesReceived * 100 / totalBytes) : 0
+                            };
+                            progress?.Report(progressArgs);
+                            ProgressChanged?.Invoke(this, progressArgs);
+                        }
+                    }
+
+                    File.Move(tempPath, localPath, overwrite: true);
+                }
+                finally
+                {
+                    try { if (File.Exists(tempPath)) File.Delete(tempPath); } catch { }
                 }
 
-                return true;
+                return new SymbolDownloadResult(SymbolDownloadStatus.Success);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
             }
             catch (Exception)
             {
-                return false;
+                return new SymbolDownloadResult(SymbolDownloadStatus.Failed, dllName);
+            }
+        }
+
+        private static string GetFileVersion(string path)
+        {
+            try
+            {
+                // Use the version string ("10.0.26100.9278 (WinBuild...)"), not the numeric
+                // VS_FIXEDFILEINFO fields - system DLLs report a 6.2.x compatibility version there.
+                var ver = FileVersionInfo.GetVersionInfo(path).FileVersion ?? string.Empty;
+                int paren = ver.IndexOf(' ');
+                return paren > 0 ? ver.Substring(0, paren) : ver;
+            }
+            catch
+            {
+                return string.Empty;
             }
         }
 
@@ -291,6 +336,19 @@ namespace DWMBlurGlassGUI.Services
             public uint Age;
         }
     }
+
+    public enum SymbolDownloadStatus
+    {
+        Success,
+        /// <summary>The symbol server has no PDB for this build yet (HTTP 404).</summary>
+        NotPublished,
+        Failed
+    }
+
+    public readonly record struct SymbolDownloadResult(
+        SymbolDownloadStatus Status,
+        string FileName = "",
+        string FileVersion = "");
 
     public class DownloadProgressEventArgs : EventArgs
     {

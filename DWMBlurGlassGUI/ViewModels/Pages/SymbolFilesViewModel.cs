@@ -94,17 +94,27 @@ namespace DWMBlurGlassGUI.ViewModels.Pages
                     }
                 });
 
-                bool success = await _symbolDownloader.DownloadSymbolsAsync(progress, _downloadCts.Token);
+                var result = await _symbolDownloader.DownloadSymbolsAsync(progress, _downloadCts.Token);
 
-                if (success)
+                if (result.Status == SymbolDownloadStatus.NotPublished)
+                {
+                    var fmt = Lang.GetString("symnotpublished",
+                        "Microsoft has not published symbol files for {0} {1} yet. This usually happens for a few days after a Windows update - please try again later.");
+                    DownloadStatusText = string.Format(fmt, result.FileName, result.FileVersion).Replace("  ", " ");
+                    DownloadProgress = 0;
+                }
+                else if (result.Status == SymbolDownloadStatus.Success)
                 {
                     DownloadStatusText = "";
                     DownloadProgress = 100;
                     CheckSymbolStatus();
 
-                    // If task is installed and symbols are now valid, run host process
+                    // If task is installed and symbols are now valid, (re)start the host process.
+                    // A host that is already running only loads symbols when DWM starts, and a
+                    // second one exits straight away, so stop it first to pick the new ones up now.
                     if (IsSymbolValid && TaskSchedulerService.IsTaskInstalled())
                     {
+                        TaskSchedulerService.StopHostProcess();
                         TaskSchedulerService.RunHostProcess();
                     }
                 }

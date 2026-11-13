@@ -225,6 +225,7 @@ namespace MDWMBlurGlass
 	{
 		m_cancelRequested = false;
 		m_lastError.clear();
+		m_lastHttpStatus = 0;
 
 		// 创建符号目录
 		SHCreateDirectoryExW(nullptr, m_symbolsPath.c_str(), nullptr);
@@ -406,6 +407,7 @@ namespace MDWMBlurGlass
 		DWORD statusCode = 0, statusCodeSize = sizeof(statusCode);
 		WinHttpQueryHeaders(hRequest, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
 			nullptr, &statusCode, &statusCodeSize, nullptr);
+		m_lastHttpStatus = statusCode;
 
 		if (statusCode != 200)
 		{
@@ -508,7 +510,7 @@ namespace MDWMBlurGlass
 	#define WM_UPDATE_PROGRESS		(WM_USER + 100)
 	#define WM_DOWNLOAD_COMPLETE	(WM_USER + 101)
 
-	bool SymbolDownloadDialog::Show(HWND hParent)
+	SymbolDownloadOutcome SymbolDownloadDialog::Show(HWND hParent)
 	{
 		// 初始化通用控件
 		INITCOMMONCONTROLSEX icc = { sizeof(INITCOMMONCONTROLSEX), ICC_PROGRESS_CLASS };
@@ -554,7 +556,7 @@ namespace MDWMBlurGlass
 		if (!hDlg)
 		{
 			delete data.downloader;
-			return false;
+			return SymbolDownloadOutcome::Failed;
 		}
 
 		data.hDlg = hDlg;
@@ -565,7 +567,7 @@ namespace MDWMBlurGlass
 		{
 			DestroyWindow(hDlg);
 			delete data.downloader;
-			return false;
+			return SymbolDownloadOutcome::Failed;
 		}
 
 		// 显示对话框
@@ -590,7 +592,13 @@ namespace MDWMBlurGlass
 		WaitForSingleObject(hThread, INFINITE);
 		CloseHandle(hThread);
 
-		bool result = data.success;
+		SymbolDownloadOutcome result = SymbolDownloadOutcome::Failed;
+		if (data.success)
+			result = SymbolDownloadOutcome::Success;
+		else if (data.cancelled)
+			result = SymbolDownloadOutcome::Cancelled;
+		else if (data.downloader->GetLastHttpStatus() == 404)
+			result = SymbolDownloadOutcome::NotPublished;
 		delete data.downloader;
 
 		return result;

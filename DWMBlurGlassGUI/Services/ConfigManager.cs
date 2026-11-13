@@ -166,6 +166,12 @@ namespace DWMBlurGlassGUI.Services
             Config.ActiveBlendColorDark = ReadUInt("activeBlendColorDark", 0x64000000);
             Config.InactiveBlendColorDark = ReadUInt("inactiveBlendColorDark", 0x64000000);
 
+            Config.TitleGradient = Math.Clamp(ReadInt("titleGradient", 0), 0, 2);
+            Config.ActiveGradientColor = ReadUInt("activeGradientColor", 0xFFD08410);
+            Config.InactiveGradientColor = ReadUInt("inactiveGradientColor", 0xFFB5B5B5);
+            Config.ActiveGradientColorDark = ReadUInt("activeGradientColorDark", 0xFFD08410);
+            Config.InactiveGradientColorDark = ReadUInt("inactiveGradientColorDark", 0xFF505050);
+
             Config.BlurMethod = (BlurMethod)ReadInt("blurMethod", (int)BlurMethod.CustomBlur);
             Config.EffectType = (EffectType)ReadInt("effectType", (int)EffectType.Blur);
             Config.BlurQuality = (BlurQuality)ReadInt("blurQuality", (int)BlurQuality.Speed);
@@ -221,6 +227,12 @@ namespace DWMBlurGlassGUI.Services
             WriteUInt("inactiveTextColorDark", Config.InactiveTextColorDark);
             WriteUInt("activeBlendColorDark", Config.ActiveBlendColorDark);
             WriteUInt("inactiveBlendColorDark", Config.InactiveBlendColorDark);
+
+            WriteInt("titleGradient", Config.TitleGradient);
+            WriteUInt("activeGradientColor", Config.ActiveGradientColor);
+            WriteUInt("inactiveGradientColor", Config.InactiveGradientColor);
+            WriteUInt("activeGradientColorDark", Config.ActiveGradientColorDark);
+            WriteUInt("inactiveGradientColorDark", Config.InactiveGradientColorDark);
 
             WriteInt("blurMethod", (int)Config.BlurMethod);
             WriteInt("effectType", (int)Config.EffectType);

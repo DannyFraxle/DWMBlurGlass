@@ -25,7 +25,8 @@ namespace MDWMBlurGlass
 
 	void MHostStartProcess();
 
-	bool LoadDWMExtensionBase(std::wstring& err, DWORD pid);
+	// symbolsFailed (optional) is set when the failure was the symbols rather than the injection.
+	bool LoadDWMExtensionBase(std::wstring& err, DWORD pid, bool* symbolsFailed = nullptr);
 
 	void MHostNotify(MHostNotifyType type, LPARAM param = 0);
 }

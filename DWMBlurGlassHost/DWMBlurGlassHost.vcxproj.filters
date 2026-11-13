@@ -54,6 +54,12 @@
     <ClInclude Include="Helper\SymbolDownloader.h">
       <Filter>头文件\Helper</Filter>
     </ClInclude>
+    <ClInclude Include="Helper\OffsetCache.h">
+      <Filter>头文件\Helper</Filter>
+    </ClInclude>
+    <ClInclude Include="Helper\ToastNotifier.h">
+      <Filter>头文件\Helper</Filter>
+    </ClInclude>
     <ClInclude Include="Helper\wil.h">
       <Filter>头文件\Helper</Filter>
     </ClInclude>
@@ -78,6 +84,15 @@
       <Filter>源文件\Helper</Filter>
     </ClCompile>
     <ClCompile Include="Helper\SymbolDownloader.cpp">
+      <Filter>源文件\Helper</Filter>
+    </ClCompile>
+    <ClCompile Include="Helper\OffsetCache.cpp">
+      <Filter>源文件\Helper</Filter>
+    </ClCompile>
+    <ClCompile Include="Helper\ToastNotifier.cpp">
+      <Filter>源文件\Helper</Filter>
+    </ClCompile>
+    <ClCompile Include="..\DWMBlurGlassExt\minhook\hde\hde64.c">
       <Filter>源文件\Helper</Filter>
     </ClCompile>
   </ItemGroup>

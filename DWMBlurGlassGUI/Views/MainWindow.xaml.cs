@@ -21,8 +21,8 @@ namespace DWMBlurGlassGUI.Views
             navigationService.SetNavigationControl(NavigationView);
             contentDialogService.SetDialogHost(RootContentDialog);
 
-            // Navigate to the first page after loaded
-            Loaded += (s, e) => NavigationView.Navigate(typeof(GeneralSettingsPage));
+            // Navigate to the start page (General unless launched with "--page symbols") after loaded
+            Loaded += (s, e) => NavigationView.Navigate(App.StartPage);
         }
     }
 }

@@ -19,6 +19,8 @@
 #include "DWMBlurGlass.h"
 #include "Section/OcclusionCulling.h"
 #include "Section/RefractionRecon.h"
+#include "Section/D3DPresentHook.h"
+#include "Section/GlassScene.h"
 #include "HookDef.h"
 #include <mutex>
 #include <minidumpapiset.h>
@@ -157,6 +159,8 @@ namespace MDWMBlurGlassExt
 		DwmAPIEffect::Detach();
 		ScaleOptimizer::Detach();
 		RefractionRecon::Detach();
+		D3DPresentHook::Detach();
+		GlassScene::Reset();
 
 		g_CTopLevelWindow_ValidateVisual_HookDispatcher.enable_hook_routine<4, false>();
 
@@ -187,12 +191,19 @@ namespace MDWMBlurGlassExt
 			g_configData = ConfigData::LoadFromFile(path);
 		}
 		DwmAPIEffect::Refresh();
+		// Before the backdrops refresh, so glass windows register with the edge
+		// pinch as they validate rather than only on their next change.
+		GlassScene::Refresh();
 		CustomBackdrop::Refresh();
 		AccentBlur::Refresh();
 		BlurRadiusTweaker::Refresh();
 		CustomButton::Refresh();
 		ScaleOptimizer::Refresh();
 		RefractionRecon::Refresh();
+		// The Liquid Glass edge pinch (Windows 11 only): arms when LiquidGlass
+		// is selected and glassPinch is on, disarms otherwise.
+		D3DPresentHook::Refresh();
+		GlassScene::Flush();
 
 		if (g_configData.useAccentColor)
 			RefreshAccentColor(0);

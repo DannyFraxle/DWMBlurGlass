@@ -39,6 +39,12 @@
 	<cmodedark>Dark Mode colors</cmodedark>
 	<blendcolor>Titlebar blend color (active):</blendcolor>
 	<inactiveblendcolor>Titlebar blend color (inactive):</inactiveblendcolor>
+	<titlegradient>Titlebar gradient (fades from the blend color):</titlegradient>
+	<gradientnone>Off</gradientnone>
+	<gradienthorizontal>Horizontal (Windows 98)</gradienthorizontal>
+	<gradientvertical>Vertical (XP Media Center)</gradientvertical>
+	<gradientcolor>Gradient end color (active):</gradientcolor>
+	<inactivegradientcolor>Gradient end color (inactive):</inactivegradientcolor>
 	<activecolor>Active text color:</activecolor>
 	<inactivecolor>Inactive text color:</inactivecolor>
 	<preview>Preview</preview>
@@ -81,10 +87,18 @@
 	<symstatus1>Valid</symstatus1>
 	<symdowning>Downloading...</symdowning>
 	<symdownfail>Download failed! Unable to download symbol files from "msdl.microsoft.com".</symdownfail>
+	<symnotpublished>Microsoft has not published symbol files for {0} {1} yet. This usually happens for a few days after a Windows update - please try again later.</symnotpublished>
 	<symdowntitle>Download Symbol Files</symdowntitle>
 	<symdowninfo>Downloading symbol files from Microsoft servers...</symdowninfo>
 	<cancel>Cancel</cancel>
 	<syminvalid>Symbol files are invalid, please go to the "Symbols" page of the DWMBlurGlass program to download new symbol files.</syminvalid>
+	<notify_symtitle>Symbol files need updating</notify_symtitle>
+	<notify_symoutdated>Windows has been updated and the symbol files no longer match it, so the glass effects are paused. Download new ones from the Symbols page.</notify_symoutdated>
+	<notify_symnotpublished>Microsoft hasn't published symbol files for this Windows build yet. This usually takes a few days after an update. The glass effects are paused until then.</notify_symnotpublished>
+	<notify_symdownfail>New symbol files couldn't be downloaded, so the glass effects are paused. Check your connection, then download them from the Symbols page.</notify_symdownfail>
+	<notify_opensymbols>Open Symbols page</notify_opensymbols>
+	<notify_loadfailtitle>DWMBlurGlass couldn't start</notify_loadfailtitle>
+	<notify_open>Open DWMBlurGlass</notify_open>
 	<autodownloadsymbol>Auto-download symbol files</autodownloadsymbol>
 	<autodownloadsymboltip>If "Auto-download symbol files" is enabled, symbol files will be automatically downloaded when DWMBlurGlass starts and detects invalid symbols.\n\nNote: We still do not recommend frequently updating your system, as this may cause the software to become invalid frequently.</autodownloadsymboltip>
 	<configfile>Configuration file</configfile>

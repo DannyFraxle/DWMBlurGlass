@@ -47,6 +47,16 @@ namespace MDWMBlurGlass
 		Quality = 1
 	};
 
+	// Optional gradient across the titlebar, laid over the normal backdrop:
+	// it fades from fully clear at the start edge (so the normal blend colour
+	// shows there) to the gradient colour at the far edge.
+	enum class gradientDirection
+	{
+		None = 0,
+		Horizontal = 1,	// left -> right, as in Windows 98
+		Vertical = 2	// top -> bottom, as in XP Media Center Edition
+	};
+
 	struct ConfigData
 	{
 		bool applyglobal = false;
@@ -75,9 +85,22 @@ namespace MDWMBlurGlass
 		int extendRound = 10;
 		int clipRound = 0;
 		int titlebtnOffsetX = -1;
-		// LiquidGlass material tuning (edge refraction), config.ini only
-		float glassRefractionAmount = 8.f;
+		// LiquidGlass tuning, config.ini only.
+		// glassRefractionAmount: how wide a strip of the desktop just outside a
+		// glass edge gets compacted into the rim, px (the "pinch" reach).
+		// glassRimThickness: how wide the rim it is compacted into is, px.
+		float glassRefractionAmount = 24.f;
 		int glassRimThickness = 12;
+		// The edge pinch is drawn by a D3D pass inside dwm.exe on Windows 11.
+		// false turns it off and leaves the Composition material alone; so does
+		// creating C:\ProgramData\DWMBlurGlassRecon\no_pinch.
+		bool glassPinch = true;
+		// Bring-up aid: floods the rim band with flat magenta so the published
+		// rects can be checked at a glance. config.ini only, not in the GUI.
+		bool glassDebugRim = false;
+		// One-shot: logs which D2D effects Composition will actually build,
+		// to C:\ProgramData\DWMBlurGlassRecon\effects.log. config.ini only.
+		bool glassProbeEffects = false;
 		//
 
 		int customCloseBtnW = 49;
@@ -107,6 +130,14 @@ namespace MDWMBlurGlass
 		COLORREF inactiveTextColorDark = 0xFFB4B4B4;
 		COLORREF activeBlendColorDark = 0x64000000;
 		COLORREF inactiveBlendColorDark = 0x64000000;
+
+		// Far-edge colours of the titlebar gradient (0xAABBGGRR, like the
+		// blend colours). Defaults are the Windows 98 gradient ends.
+		gradientDirection titleGradient = gradientDirection::None;
+		COLORREF activeGradientColor = 0xFFD08410;		// 16,132,208
+		COLORREF inactiveGradientColor = 0xFFB5B5B5;	// 181,181,181
+		COLORREF activeGradientColorDark = 0xFFD08410;
+		COLORREF inactiveGradientColorDark = 0xFF505050;
 
 
 		blurMethod blurmethod = blurMethod::CustomBlur;

@@ -22,6 +22,7 @@
 #include "HookDef.h"
 #include "wil.h"
 #include "CommonDef.h"
+#include "GlassScene.h"
 
 namespace MDWMBlurGlassExt::CustomBackdrop
 {
@@ -505,6 +506,11 @@ namespace MDWMBlurGlassExt::CustomBackdrop
 
 	HRESULT CTopLevelWindow_ValidateVisual(CTopLevelWindow* This)
 	{
+		// Whatever this window just did - moved, raised, minimised, hid - may
+		// change what covers a glass window, so the Liquid Glass scene is
+		// re-published after every validation, on every path out.
+		auto republishGlass{ wil::scope_exit([] { GlassScene::Flush(); }) };
+
 		g_windowData = nullptr;
 		if (!IsBackdropAllowed(This))
 		{

@@ -119,6 +119,44 @@ namespace DWMBlurGlassGUI.Services
         }
 
         /// <summary>
+        /// Remove what the host registers to post notifications: the "DWMBlurGlass" Start-menu
+        /// shortcut that carries its app ID, the app ID's registry entry, and DWMBlurGlassNotify.exe's
+        /// registration as the activator Windows starts when a notification is clicked.
+        /// </summary>
+        public static void RemoveNotificationRegistration()
+        {
+            try
+            {
+                string shortcut = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Programs), "DWMBlurGlass.lnk");
+                if (File.Exists(shortcut))
+                    File.Delete(shortcut);
+            }
+            catch
+            {
+                // Ignore errors
+            }
+
+            const string activatorKey = @"Software\Classes\CLSID\{ADB7320E-D073-4D36-BFB5-622EB88A2F52}"; // Common\NotifyActivator.h
+            var keys = new (Microsoft.Win32.RegistryKey Root, string Path)[]
+            {
+                (Microsoft.Win32.Registry.CurrentUser, @"Software\Classes\AppUserModelId\Maplespe.DWMBlurGlass"),
+                (Microsoft.Win32.Registry.LocalMachine, activatorKey),
+                (Microsoft.Win32.Registry.CurrentUser, activatorKey)
+            };
+            foreach (var (root, path) in keys)
+            {
+                try
+                {
+                    root.DeleteSubKeyTree(path, false);
+                }
+                catch
+                {
+                    // Ignore errors
+                }
+            }
+        }
+
+        /// <summary>
         /// Run the host process
         /// </summary>
         public static void RunHostProcess()

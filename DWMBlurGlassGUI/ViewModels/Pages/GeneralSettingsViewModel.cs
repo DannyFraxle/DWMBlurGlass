@@ -75,10 +75,19 @@ namespace DWMBlurGlassGUI.ViewModels.Pages
             _darkActiveTextColor = UIntToColor(config.ActiveTextColorDark);
             _darkInactiveTextColor = UIntToColor(config.InactiveTextColorDark);
 
+            _lightActiveGradientColor = UIntToColor(config.ActiveGradientColor);
+            _lightInactiveGradientColor = UIntToColor(config.InactiveGradientColor);
+            _darkActiveGradientColor = UIntToColor(config.ActiveGradientColorDark);
+            _darkInactiveGradientColor = UIntToColor(config.InactiveGradientColorDark);
+            SelectedGradientIndex = config.TitleGradient;
+
             OnPropertyChanged(nameof(ActiveTitleBarColor));
             OnPropertyChanged(nameof(InactiveTitleBarColor));
             OnPropertyChanged(nameof(ActiveTextColor));
             OnPropertyChanged(nameof(InactiveTextColor));
+            OnPropertyChanged(nameof(ActiveGradientColor));
+            OnPropertyChanged(nameof(InactiveGradientColor));
+            OnPropertyChanged(nameof(TitleBarGradientBrush));
         }
 
         private void SaveToConfig()
@@ -101,6 +110,12 @@ namespace DWMBlurGlassGUI.ViewModels.Pages
             config.InactiveBlendColorDark = ColorToUInt(_darkInactiveTitleBarColor);
             config.ActiveTextColorDark = ColorToUInt(_darkActiveTextColor);
             config.InactiveTextColorDark = ColorToUInt(_darkInactiveTextColor);
+
+            config.TitleGradient = SelectedGradientIndex;
+            config.ActiveGradientColor = ColorToUInt(_lightActiveGradientColor);
+            config.InactiveGradientColor = ColorToUInt(_lightInactiveGradientColor);
+            config.ActiveGradientColorDark = ColorToUInt(_darkActiveGradientColor);
+            config.InactiveGradientColorDark = ColorToUInt(_darkInactiveGradientColor);
 
             _configManager.SaveConfig();
         }
@@ -359,8 +374,94 @@ namespace DWMBlurGlassGUI.ViewModels.Pages
             }
         }
 
-        public Brush ContentAreaBrush => SelectedThemeIndex == 0 
-            ? new SolidColorBrush(Color.FromArgb(100, 255, 255, 255)) 
+        // Titlebar gradient. Index matches the config value:
+        // 0 = off, 1 = horizontal (Windows 98), 2 = vertical (XP Media Center).
+        [ObservableProperty]
+        [NotifyPropertyChangedFor(nameof(IsGradientEnabled))]
+        [NotifyPropertyChangedFor(nameof(TitleBarGradientBrush))]
+        private int _selectedGradientIndex = 0;
+
+        partial void OnSelectedGradientIndexChanged(int value)
+        {
+            _configManager.Config.TitleGradient = value;
+        }
+
+        public bool IsGradientEnabled => SelectedGradientIndex != 0;
+
+        private Color _lightActiveGradientColor = Color.FromRgb(16, 132, 208);
+        private Color _lightInactiveGradientColor = Color.FromRgb(181, 181, 181);
+        private Color _darkActiveGradientColor = Color.FromRgb(16, 132, 208);
+        private Color _darkInactiveGradientColor = Color.FromRgb(80, 80, 80);
+
+        public Color ActiveGradientColor
+        {
+            get => SelectedThemeIndex == 0 ? _lightActiveGradientColor : _darkActiveGradientColor;
+            set
+            {
+                if (SelectedThemeIndex == 0)
+                {
+                    if (_lightActiveGradientColor == value) return;
+                    _lightActiveGradientColor = value;
+                    _configManager.Config.ActiveGradientColor = ColorToUInt(value);
+                }
+                else
+                {
+                    if (_darkActiveGradientColor == value) return;
+                    _darkActiveGradientColor = value;
+                    _configManager.Config.ActiveGradientColorDark = ColorToUInt(value);
+                }
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(TitleBarGradientBrush));
+            }
+        }
+
+        public Color InactiveGradientColor
+        {
+            get => SelectedThemeIndex == 0 ? _lightInactiveGradientColor : _darkInactiveGradientColor;
+            set
+            {
+                if (SelectedThemeIndex == 0)
+                {
+                    if (_lightInactiveGradientColor == value) return;
+                    _lightInactiveGradientColor = value;
+                    _configManager.Config.InactiveGradientColor = ColorToUInt(value);
+                }
+                else
+                {
+                    if (_darkInactiveGradientColor == value) return;
+                    _darkInactiveGradientColor = value;
+                    _configManager.Config.InactiveGradientColorDark = ColorToUInt(value);
+                }
+                OnPropertyChanged();
+            }
+        }
+
+        // Preview overlay for the sample titlebar, drawn the way DWM draws it:
+        // clear at the start edge, the gradient colour at the far edge, on top
+        // of the blend colour. The clear end keeps the far end's RGB so the
+        // middle does not darken.
+        public Brush TitleBarGradientBrush
+        {
+            get
+            {
+                if (SelectedGradientIndex == 0)
+                    return Brushes.Transparent;
+
+                var end = ActiveGradientColor;
+                var brush = new LinearGradientBrush
+                {
+                    StartPoint = new System.Windows.Point(0, 0),
+                    EndPoint = SelectedGradientIndex == 1 ? new System.Windows.Point(1, 0) : new System.Windows.Point(0, 1)
+                };
+                brush.GradientStops.Add(new GradientStop(Color.FromArgb(0, end.R, end.G, end.B), 0));
+                brush.GradientStops.Add(new GradientStop(end, 1));
+                brush.Freeze();
+                return brush;
+            }
+        }
+
+        public Brush ContentAreaBrush => SelectedThemeIndex == 0
+            ? new SolidColorBrush(Color.FromArgb(100, 255, 255, 255))
             : new SolidColorBrush(Color.FromArgb(100, 0, 0, 0));
 
         partial void OnSelectedThemeIndexChanged(int value)
@@ -369,6 +470,9 @@ namespace DWMBlurGlassGUI.ViewModels.Pages
             OnPropertyChanged(nameof(InactiveTitleBarColor));
             OnPropertyChanged(nameof(ActiveTextColor));
             OnPropertyChanged(nameof(InactiveTextColor));
+            OnPropertyChanged(nameof(ActiveGradientColor));
+            OnPropertyChanged(nameof(InactiveGradientColor));
+            OnPropertyChanged(nameof(TitleBarGradientBrush));
             OnPropertyChanged(nameof(ContentAreaBrush));
         }
 
@@ -411,6 +515,7 @@ namespace DWMBlurGlassGUI.ViewModels.Pages
             var (success, errorMessage) = TaskSchedulerService.UninstallTask();
             if (success)
             {
+                TaskSchedulerService.RemoveNotificationRegistration();
                 IsInstalled = false;
                 StatusText = Lang["status0"];
             }
@@ -459,6 +564,8 @@ namespace DWMBlurGlassGUI.ViewModels.Pages
                 "InactiveTitleBar" => InactiveTitleBarColor,
                 "ActiveText" => ActiveTextColor,
                 "InactiveText" => InactiveTextColor,
+                "ActiveGradient" => ActiveGradientColor,
+                "InactiveGradient" => InactiveGradientColor,
                 _ => Colors.White
             };
 
@@ -484,6 +591,12 @@ namespace DWMBlurGlassGUI.ViewModels.Pages
                         break;
                     case "InactiveText":
                         InactiveTextColor = dialog.SelectedColor;
+                        break;
+                    case "ActiveGradient":
+                        ActiveGradientColor = dialog.SelectedColor;
+                        break;
+                    case "InactiveGradient":
+                        InactiveGradientColor = dialog.SelectedColor;
                         break;
                 }
             }
