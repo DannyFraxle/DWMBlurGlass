@@ -73,10 +73,13 @@ namespace MDWMBlurGlassExt
 		// nothing while the option is off.
 		wuc::SpriteVisual m_gradientVisual{ nullptr };
 		wuc::CompositionLinearGradientBrush m_gradientBrush{ nullptr };
-		wuc::CompositionColorGradientStop m_gradientStartStop{ nullptr };
-		wuc::CompositionColorGradientStop m_gradientEndStop{ nullptr };
+		// start, middle, end - the middle stop is only in the brush's stop
+		// collection while the middle point is on.
+		std::array<wuc::CompositionColorGradientStop, 3> m_gradientStops{ nullptr, nullptr, nullptr };
+		std::array<winrt::Windows::UI::Color, 3> m_gradientStopColors{};
 		MDWMBlurGlass::gradientDirection m_gradientDirection{ MDWMBlurGlass::gradientDirection::None };
-		COLORREF m_gradientColor{ 0 };
+		bool m_gradientMid{ false };
+		float m_gradientMidPos{ -1.f };
 		RECT m_gradientRect{};
 
 		HRESULT InitializeVisual() override;

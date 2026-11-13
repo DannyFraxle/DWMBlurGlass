@@ -108,6 +108,11 @@ namespace DWMBlurGlassGUI.Models
         [ObservableProperty]
         private float _glassIntensity = 1.0f;
 
+        // LiquidGlass: how wide the band of compacted surroundings along the
+        // titlebar edges is, in pixels (config key glassRimThickness).
+        [ObservableProperty]
+        private int _glassRimThickness = 12;
+
         [ObservableProperty]
         private bool _customAeroTexture = false;
 
@@ -166,6 +171,25 @@ namespace DWMBlurGlassGUI.Models
 
         [ObservableProperty]
         private uint _inactiveGradientColorDark = 0xFF505050;
+
+        // Optional middle point (blend colour -> middle -> end), for the glossy XP look.
+        [ObservableProperty]
+        private bool _titleGradientMid = false;
+
+        [ObservableProperty]
+        private int _titleGradientMidPos = 64;
+
+        [ObservableProperty]
+        private uint _activeGradientMidColor = 0xFFC77738;
+
+        [ObservableProperty]
+        private uint _inactiveGradientMidColor = 0xFF969696;
+
+        [ObservableProperty]
+        private uint _activeGradientMidColorDark = 0xFFC77738;
+
+        [ObservableProperty]
+        private uint _inactiveGradientMidColorDark = 0xFF404040;
 
         [ObservableProperty]
         private BlurMethod _blurMethod = BlurMethod.CustomBlur;

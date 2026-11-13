@@ -204,5 +204,14 @@ namespace MDWMBlurGlassExt
 		// window has drawn is what lets the rim show what is actually behind the
 		// glass, which a post-composition pass structurally cannot see.
 		{ dwmcore, "CWindowNode::RenderContent" },
+
+		// The edge pinch's per-frame anchor. CDDisplaySwapChain::PrePresent is
+		// gone from dwmcore as of 10.0.26100.9278, so the pass now runs inside
+		// the render target's present instead: Present(this) checks
+		// PresentNeeded, then flips through COverlayContext::Present, which asks
+		// CDDisplaySwapChainBuffer::GetD3D11Resource for the buffer it is about
+		// to put on screen - the moment the pass draws into it.
+		// (Takes only `this`; checked against the disassembly of that build.)
+		{ dwmcore, "CDDisplayRenderTarget::Present" },
 	});
 }

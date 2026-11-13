@@ -75,7 +75,8 @@
                         <ComboBoxItem Content="Aero"/>
                         <ComboBoxItem Content="Acrylic"/>
                         <ComboBoxItem Content="Mica"/>
-                        <ComboBoxItem Content="LiquidGlass" Visibility="{Binding LiquidGlassVisibility}"/>
+                        <!-- Shown as "Bubble Glass"; still effectType=4 / LiquidGlass internally and in config.ini -->
+                        <ComboBoxItem Content="Bubble Glass" Visibility="{Binding LiquidGlassVisibility}"/>
                     </ComboBox>
                 </Grid>
 
@@ -133,6 +134,18 @@
                     <TextBlock Text="{Binding Lang[luminosity]}" VerticalAlignment="Center" FontSize="12"/>
                     <Slider Grid.Column="1" Minimum="0" Maximum="100" Value="{Binding MaterialOpacity}" TickFrequency="1" IsSnapToTickEnabled="True" MaxWidth="300" Margin="10,0" VerticalAlignment="Center" Opacity="{Binding IsEffectTypeEnabled, Converter={StaticResource BoolToOpacityConverter}}" />
                     <TextBlock Grid.Column="2" Text="{Binding MaterialOpacity, StringFormat={}{0}%}" VerticalAlignment="Center" FontSize="12" Width="35" HorizontalAlignment="Left" Opacity="{Binding IsEffectTypeEnabled, Converter={StaticResource BoolToOpacityConverter}}"/>
+                </Grid>
+
+                <!-- Edge thickness - LiquidGlass -->
+                <Grid Margin="0,0,0,8" Visibility="{Binding LiquidGlassSettingsVisibility}">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="160"/>
+                        <ColumnDefinition Width="300"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="{Binding Lang[glassEdgeThickness]}" VerticalAlignment="Center" FontSize="12"/>
+                    <Slider Grid.Column="1" Minimum="2" Maximum="40" Value="{Binding LiquidGlassEdgeThickness}" TickFrequency="1" IsSnapToTickEnabled="True" MaxWidth="300" Margin="10,0" VerticalAlignment="Center" Opacity="{Binding IsEffectTypeEnabled, Converter={StaticResource BoolToOpacityConverter}}" />
+                    <TextBlock Grid.Column="2" Text="{Binding LiquidGlassEdgeThickness, StringFormat={}{0} px}" VerticalAlignment="Center" FontSize="12" Width="40" HorizontalAlignment="Left" Opacity="{Binding IsEffectTypeEnabled, Converter={StaticResource BoolToOpacityConverter}}"/>
                 </Grid>
 
                 <Separator Margin="0,5,0,5" Background="{DynamicResource CardStrokeColorDefaultBrush}"/>

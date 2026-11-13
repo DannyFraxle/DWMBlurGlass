@@ -14,10 +14,10 @@ namespace MDWMBlurGlassExt::LiquidGlassPass
 	// HLSL packs into float4 registers, so every group below fills exactly one.
 	struct ShaderParams
 	{
-		float quad[4];          // area to rasterise, target px
-		float rect[4];          // glass rect, target px (disabled edges pushed out)
+		float quad[4];          // area to rasterise, in band-texture px
+		float rect[4];          // the titlebar, SCREEN px (disabled edges pushed out)
 
-		float invTarget[2];
+		float invTarget[2];     // 1 / band texture size
 		float rim;              // band width, px
 		float cornerRadius;     // px
 
@@ -27,13 +27,16 @@ namespace MDWMBlurGlassExt::LiquidGlassPass
 		float highlight;
 
 		float lightDir[2];      // unit vector toward the light
-		float fade;             // 0..1
+		float encodeSrgb;       // 1 when the frame is linear FP16 and the band 8-bit sRGB
 		float debug;
+
+		float origin[2];        // screen px of the band texture's (0,0)
+		float invFrame[2];      // 1 / composed frame size
 
 		float occluderCount;
 		float pad0[3];
 
 		float occluders[kMaxShaderOccluders][4];
 	};
-	static_assert(sizeof(ShaderParams) == 16 * 14, "ShaderParams must match the HLSL cbuffer layout");
+	static_assert(sizeof(ShaderParams) == 16 * 15, "ShaderParams must match the HLSL cbuffer layout");
 }

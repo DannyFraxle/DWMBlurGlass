@@ -32,8 +32,9 @@ namespace MDWMBlurGlassExt::GlassRects
 
 	struct Entry
 	{
+		const void* owner;         // the backdrop visual; keys the band (PinchBands)
 		HWND hwnd;
-		RECT rect;                 // glass region, screen px
+		RECT rect;                 // titlebar, screen px
 		uint8_t edges;             // which sides get a rim
 		float cornerRadius;        // px
 		bool active;

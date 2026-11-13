@@ -46,6 +46,7 @@ namespace DWMBlurGlassGUI.ViewModels.Pages
             DisableInPowerSaving = config.DisableOnBattery;
             DisableDcompRateLimit = config.DisableFramerateLimit;
             AeroReflectionOpacity = config.GlassIntensity * 100;
+            LiquidGlassEdgeThickness = config.GlassRimThickness;
             ColorBalance = config.AeroColorBalance * 100;
             LuminosityBalance = config.AeroBlurBalance * 100;
             SaturationBalance = config.AeroAfterglowBalance * 100;
@@ -131,6 +132,7 @@ namespace DWMBlurGlassGUI.ViewModels.Pages
         // Both are supported, so the option is always offered.
         public static bool IsLiquidGlassSupported => true;
         public Visibility LiquidGlassVisibility => IsLiquidGlassSupported ? Visibility.Visible : Visibility.Collapsed;
+        public Visibility LiquidGlassSettingsVisibility => SelectedEffectTypeIndex == 4 ? Visibility.Visible : Visibility.Collapsed;
 
         partial void OnSelectedEffectTypeIndexChanged(int value)
         {
@@ -138,6 +140,17 @@ namespace DWMBlurGlassGUI.ViewModels.Pages
             OnPropertyChanged(nameof(BlurRadiusVisibility));
             OnPropertyChanged(nameof(AeroSettingsVisibility));
             OnPropertyChanged(nameof(MaterialOpacityVisibility));
+            OnPropertyChanged(nameof(LiquidGlassSettingsVisibility));
+        }
+
+        // LiquidGlass edge thickness: the width, in pixels, of the band along the
+        // titlebar edges that the surroundings are compacted into.
+        [ObservableProperty]
+        private int _liquidGlassEdgeThickness = 12;
+
+        partial void OnLiquidGlassEdgeThicknessChanged(int value)
+        {
+            _configManager.Config.GlassRimThickness = value;
         }
 
         // Blur Quality Settings

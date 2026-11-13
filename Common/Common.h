@@ -138,6 +138,15 @@ namespace MDWMBlurGlass
 		COLORREF inactiveGradientColor = 0xFFB5B5B5;	// 181,181,181
 		COLORREF activeGradientColorDark = 0xFFD08410;
 		COLORREF inactiveGradientColorDark = 0xFF505050;
+		// Optional third point between the blend colour and the end colour,
+		// titleGradientMidPos percent of the way across - for the glossy XP
+		// look (bright top, mid blue about two thirds down, dark bottom).
+		bool titleGradientMid = false;
+		int titleGradientMidPos = 64;
+		COLORREF activeGradientMidColor = 0xFFC77738;		// 56,119,199
+		COLORREF inactiveGradientMidColor = 0xFF969696;		// 150,150,150
+		COLORREF activeGradientMidColorDark = 0xFFC77738;
+		COLORREF inactiveGradientMidColorDark = 0xFF404040;
 
 
 		blurMethod blurmethod = blurMethod::CustomBlur;

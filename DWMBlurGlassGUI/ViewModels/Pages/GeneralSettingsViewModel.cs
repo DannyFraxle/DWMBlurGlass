@@ -79,7 +79,15 @@ namespace DWMBlurGlassGUI.ViewModels.Pages
             _lightInactiveGradientColor = UIntToColor(config.InactiveGradientColor);
             _darkActiveGradientColor = UIntToColor(config.ActiveGradientColorDark);
             _darkInactiveGradientColor = UIntToColor(config.InactiveGradientColorDark);
+            _lightActiveGradientMidColor = UIntToColor(config.ActiveGradientMidColor);
+            _lightInactiveGradientMidColor = UIntToColor(config.InactiveGradientMidColor);
+            _darkActiveGradientMidColor = UIntToColor(config.ActiveGradientMidColorDark);
+            _darkInactiveGradientMidColor = UIntToColor(config.InactiveGradientMidColorDark);
             SelectedGradientIndex = config.TitleGradient;
+            GradientMidEnabled = config.TitleGradientMid;
+            GradientMidPos = config.TitleGradientMidPos;
+            OnPropertyChanged(nameof(ActiveGradientMidColor));
+            OnPropertyChanged(nameof(InactiveGradientMidColor));
 
             OnPropertyChanged(nameof(ActiveTitleBarColor));
             OnPropertyChanged(nameof(InactiveTitleBarColor));
@@ -116,6 +124,12 @@ namespace DWMBlurGlassGUI.ViewModels.Pages
             config.InactiveGradientColor = ColorToUInt(_lightInactiveGradientColor);
             config.ActiveGradientColorDark = ColorToUInt(_darkActiveGradientColor);
             config.InactiveGradientColorDark = ColorToUInt(_darkInactiveGradientColor);
+            config.TitleGradientMid = GradientMidEnabled;
+            config.TitleGradientMidPos = GradientMidPos;
+            config.ActiveGradientMidColor = ColorToUInt(_lightActiveGradientMidColor);
+            config.InactiveGradientMidColor = ColorToUInt(_lightInactiveGradientMidColor);
+            config.ActiveGradientMidColorDark = ColorToUInt(_darkActiveGradientMidColor);
+            config.InactiveGradientMidColorDark = ColorToUInt(_darkInactiveGradientMidColor);
 
             _configManager.SaveConfig();
         }
@@ -378,6 +392,7 @@ namespace DWMBlurGlassGUI.ViewModels.Pages
         // 0 = off, 1 = horizontal (Windows 98), 2 = vertical (XP Media Center).
         [ObservableProperty]
         [NotifyPropertyChangedFor(nameof(IsGradientEnabled))]
+        [NotifyPropertyChangedFor(nameof(IsGradientMidEnabled))]
         [NotifyPropertyChangedFor(nameof(TitleBarGradientBrush))]
         private int _selectedGradientIndex = 0;
 
@@ -436,10 +451,80 @@ namespace DWMBlurGlassGUI.ViewModels.Pages
             }
         }
 
+        // Optional middle point: blend colour -> middle -> end colour.
+        [ObservableProperty]
+        [NotifyPropertyChangedFor(nameof(TitleBarGradientBrush))]
+        [NotifyPropertyChangedFor(nameof(IsGradientMidEnabled))]
+        private bool _gradientMidEnabled = false;
+
+        partial void OnGradientMidEnabledChanged(bool value)
+        {
+            _configManager.Config.TitleGradientMid = value;
+        }
+
+        [ObservableProperty]
+        [NotifyPropertyChangedFor(nameof(TitleBarGradientBrush))]
+        private int _gradientMidPos = 64;
+
+        partial void OnGradientMidPosChanged(int value)
+        {
+            _configManager.Config.TitleGradientMidPos = value;
+        }
+
+        public bool IsGradientMidEnabled => IsGradientEnabled && GradientMidEnabled;
+
+        private Color _lightActiveGradientMidColor = Color.FromRgb(56, 119, 199);
+        private Color _lightInactiveGradientMidColor = Color.FromRgb(150, 150, 150);
+        private Color _darkActiveGradientMidColor = Color.FromRgb(56, 119, 199);
+        private Color _darkInactiveGradientMidColor = Color.FromRgb(64, 64, 64);
+
+        public Color ActiveGradientMidColor
+        {
+            get => SelectedThemeIndex == 0 ? _lightActiveGradientMidColor : _darkActiveGradientMidColor;
+            set
+            {
+                if (SelectedThemeIndex == 0)
+                {
+                    if (_lightActiveGradientMidColor == value) return;
+                    _lightActiveGradientMidColor = value;
+                    _configManager.Config.ActiveGradientMidColor = ColorToUInt(value);
+                }
+                else
+                {
+                    if (_darkActiveGradientMidColor == value) return;
+                    _darkActiveGradientMidColor = value;
+                    _configManager.Config.ActiveGradientMidColorDark = ColorToUInt(value);
+                }
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(TitleBarGradientBrush));
+            }
+        }
+
+        public Color InactiveGradientMidColor
+        {
+            get => SelectedThemeIndex == 0 ? _lightInactiveGradientMidColor : _darkInactiveGradientMidColor;
+            set
+            {
+                if (SelectedThemeIndex == 0)
+                {
+                    if (_lightInactiveGradientMidColor == value) return;
+                    _lightInactiveGradientMidColor = value;
+                    _configManager.Config.InactiveGradientMidColor = ColorToUInt(value);
+                }
+                else
+                {
+                    if (_darkInactiveGradientMidColor == value) return;
+                    _darkInactiveGradientMidColor = value;
+                    _configManager.Config.InactiveGradientMidColorDark = ColorToUInt(value);
+                }
+                OnPropertyChanged();
+            }
+        }
+
         // Preview overlay for the sample titlebar, drawn the way DWM draws it:
-        // clear at the start edge, the gradient colour at the far edge, on top
-        // of the blend colour. The clear end keeps the far end's RGB so the
-        // middle does not darken.
+        // clear at the start edge (so the blend colour shows), then the middle
+        // point if on, then the end colour, all on top of the blend colour.
+        // The clear stop keeps the next stop's RGB so the bar does not darken.
         public Brush TitleBarGradientBrush
         {
             get
@@ -448,12 +533,16 @@ namespace DWMBlurGlassGUI.ViewModels.Pages
                     return Brushes.Transparent;
 
                 var end = ActiveGradientColor;
+                var mid = ActiveGradientMidColor;
+                var next = GradientMidEnabled ? mid : end;
                 var brush = new LinearGradientBrush
                 {
                     StartPoint = new System.Windows.Point(0, 0),
                     EndPoint = SelectedGradientIndex == 1 ? new System.Windows.Point(1, 0) : new System.Windows.Point(0, 1)
                 };
-                brush.GradientStops.Add(new GradientStop(Color.FromArgb(0, end.R, end.G, end.B), 0));
+                brush.GradientStops.Add(new GradientStop(Color.FromArgb(0, next.R, next.G, next.B), 0));
+                if (GradientMidEnabled)
+                    brush.GradientStops.Add(new GradientStop(mid, GradientMidPos / 100.0));
                 brush.GradientStops.Add(new GradientStop(end, 1));
                 brush.Freeze();
                 return brush;
@@ -472,6 +561,8 @@ namespace DWMBlurGlassGUI.ViewModels.Pages
             OnPropertyChanged(nameof(InactiveTextColor));
             OnPropertyChanged(nameof(ActiveGradientColor));
             OnPropertyChanged(nameof(InactiveGradientColor));
+            OnPropertyChanged(nameof(ActiveGradientMidColor));
+            OnPropertyChanged(nameof(InactiveGradientMidColor));
             OnPropertyChanged(nameof(TitleBarGradientBrush));
             OnPropertyChanged(nameof(ContentAreaBrush));
         }
@@ -566,6 +657,8 @@ namespace DWMBlurGlassGUI.ViewModels.Pages
                 "InactiveText" => InactiveTextColor,
                 "ActiveGradient" => ActiveGradientColor,
                 "InactiveGradient" => InactiveGradientColor,
+                "ActiveGradientMid" => ActiveGradientMidColor,
+                "InactiveGradientMid" => InactiveGradientMidColor,
                 _ => Colors.White
             };
 
@@ -597,6 +690,12 @@ namespace DWMBlurGlassGUI.ViewModels.Pages
                         break;
                     case "InactiveGradient":
                         InactiveGradientColor = dialog.SelectedColor;
+                        break;
+                    case "ActiveGradientMid":
+                        ActiveGradientMidColor = dialog.SelectedColor;
+                        break;
+                    case "InactiveGradientMid":
+                        InactiveGradientMidColor = dialog.SelectedColor;
                         break;
                 }
             }

@@ -212,6 +212,7 @@
     <ClInclude Include="Section\D3DPresentHook.h" />
     <ClInclude Include="Section\GlassRectRegistry.h" />
     <ClInclude Include="Section\GlassScene.h" />
+    <ClInclude Include="Section\PinchBands.h" />
     <ClInclude Include="Section\LiquidGlassParams.h" />
     <ClInclude Include="Section\LiquidGlassPass.h" />
     <ClInclude Include="Section\CustomButton.h" />
@@ -246,6 +247,7 @@
     <ClCompile Include="Section\D3DPresentHook.cpp" />
     <ClCompile Include="Section\GlassRectRegistry.cpp" />
     <ClCompile Include="Section\GlassScene.cpp" />
+    <ClCompile Include="Section\PinchBands.cpp" />
     <ClCompile Include="Section\LiquidGlassPass.cpp" />
     <ClCompile Include="Section\DwmAPIEffect.cpp" />
     <ClCompile Include="Section\GeometryRecorder.cpp" />

@@ -5,6 +5,7 @@
 #include "../Effects/ColorSourceEffect.hpp"
 #include "../Effects/OpacityEffect.hpp"
 #include "../Effects/CompositeEffect.hpp"
+#include "../Effects/BlendEffect.hpp"
 #include "../Effects/ChannelMatrixEffect.hpp"
 #include <algorithm>
 #include <cmath>
@@ -40,6 +41,9 @@ namespace MDWMBlurGlassExt::LiquidGlassBackdrop
 	// shadow and blue the frosted glow, all premultiplied under alpha.
 	constexpr wchar_t c_lipAcrossParameter[]{ L"LipAcross" };
 	constexpr wchar_t c_lipDownParameter[]{ L"LipDown" };
+	// The edge pinch band (see GlassScene). Four parameters in all - Backdrop,
+	// Pinch and the two lips - which is Composition's limit for one graph.
+	constexpr wchar_t c_pinchParameter[]{ L"Pinch" };
 
 	// Edge bits for UpdateLayout: which sides of the backdrop are real window
 	// edges. A caption-only backdrop has no lip along its bottom, where it meets
@@ -99,7 +103,21 @@ namespace MDWMBlurGlassExt::LiquidGlassBackdrop
 		vibrancyEffect->SetSaturation(1.f + 0.35f * strength);
 		vibrancyEffect->SetInput(*blurEffect);
 
-		winrt::Windows::Graphics::Effects::IGraphicsEffect paneEffect{ *vibrancyEffect };
+		// The edge pinch (Windows 11): a band of compacted surroundings, drawn
+		// into a surface by GlassScene, blended into the blurred pane and UNDER
+		// the tint - so the titlebar's shading, gradient, title and buttons all
+		// sit on top of it. Transparent until a band has been rendered.
+		// Screen, not over: the reflection only ever adds light, the way a
+		// reflection on glass does - bright surroundings glint on the pane,
+		// dark ones leave the blur showing. Laid over, it covered the blur at
+		// the rim like a sharp picture pasted on.
+		auto pinchedEffect{ winrt::make_self<BlendEffect>() };
+		pinchedEffect->SetName(L"Pinched");
+		pinchedEffect->SetBlendMode(D2D1_BLEND_MODE_SCREEN);
+		pinchedEffect->SetBackground(*vibrancyEffect);
+		pinchedEffect->SetForeground(wuc::CompositionEffectSourceParameter{ c_pinchParameter });
+
+		winrt::Windows::Graphics::Effects::IGraphicsEffect paneEffect{ *pinchedEffect };
 		if (static_cast<float>(tintColor.A) * tintOpacity != 0.f)
 		{
 			auto tintColorEffect{ winrt::make_self<ColorSourceEffect>() };
@@ -113,7 +131,7 @@ namespace MDWMBlurGlassExt::LiquidGlassBackdrop
 
 			auto tintedEffect{ winrt::make_self<CompositeStepEffect>() };
 			tintedEffect->SetName(L"Tinted");
-			tintedEffect->SetDestination(*vibrancyEffect);
+			tintedEffect->SetDestination(*pinchedEffect);
 			tintedEffect->SetSource(*tintOpacityEffect);
 			paneEffect = *tintedEffect;
 		}
@@ -177,7 +195,31 @@ namespace MDWMBlurGlassExt::LiquidGlassBackdrop
 		};
 		effectBrush.SetSourceParameter(c_lipAcrossParameter, makeGradient({ 1.f, 0.f }));
 		effectBrush.SetSourceParameter(c_lipDownParameter, makeGradient({ 0.f, 1.f }));
+
+		// No surface yet - creating one here, on DWM's render path, is exactly
+		// what crashed dwm.exe before. GlassScene attaches it later, from DWM's
+		// own message loop. Aligned top-left at natural size, so the band lands
+		// where it is drawn in the surface.
+		auto pinchBrush{ compositor.CreateSurfaceBrush() };
+		pinchBrush.Stretch(wuc::CompositionStretch::None);
+		pinchBrush.HorizontalAlignmentRatio(0.f);
+		pinchBrush.VerticalAlignmentRatio(0.f);
+		effectBrush.SetSourceParameter(c_pinchParameter, pinchBrush);
 		return effectBrush;
+	}
+
+	// The band input of a liquid-glass brush, or null for any other brush.
+	inline wuc::CompositionSurfaceBrush GetPinchBrush(const wuc::CompositionBrush& brush) try
+	{
+		auto effectBrush{ brush ? brush.try_as<wuc::CompositionEffectBrush>() : nullptr };
+		if (!effectBrush)
+			return nullptr;
+		auto source{ effectBrush.GetSourceParameter(c_pinchParameter) };
+		return source ? source.try_as<wuc::CompositionSurfaceBrush>() : nullptr;
+	}
+	catch (...)
+	{
+		return nullptr;
 	}
 
 	namespace Detail
@@ -330,10 +372,13 @@ namespace MDWMBlurGlassExt::LiquidGlassBackdrop
 		if (!across || !down)
 			return;
 
+		// A thin specular line and a faint shadow inside it - no frosted glow:
+		// spread across the whole lip, the glow read as a white frame round
+		// the window rather than as the edge of a pane of glass.
 		const float strength{ Strength(glassIntensity) };
-		const float light{ 0.85f * strength };
-		const float glow{ 0.30f * strength };
-		const float shade{ 0.20f * strength };
+		const float light{ 0.6f * strength };
+		const float glow{ 0.f };
+		const float shade{ 0.18f * strength };
 
 		const float rim{ static_cast<float>(std::clamp(rimThickness, 1, 64)) };
 		const float rimAcross{ (std::min)(rim, width * 0.5f) };

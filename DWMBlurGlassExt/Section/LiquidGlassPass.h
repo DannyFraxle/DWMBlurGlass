@@ -1,13 +1,12 @@
 /**
  * FileName: LiquidGlassPass.h
  *
- * The Liquid Glass edge pinch, drawn on the finished frame. Called from
- * D3DPresentHook once per frame on DWM's render thread, just before present,
- * with the swapchain buffer DWM has just composed into.
- *
- * Device objects are created lazily on DWM's own device and cached, so a
- * steady frame costs a few state changes, four small copies and one quad per
- * glass window.
+ * The render-thread half of the Liquid Glass edge pinch. Called from
+ * D3DPresentHook once per present on DWM's render thread, with the finished
+ * frame. It only READS that frame: for each titlebar it renders the band of
+ * compacted surroundings into a small texture of its own and reads it back
+ * without waiting, handing the pixels to the UI thread (PinchBands), which
+ * puts them in the window's Composition surface, under the glass tint.
 */
 #pragma once
 #include <d3d11.h>
@@ -15,11 +14,25 @@
 
 namespace MDWMBlurGlassExt::LiquidGlassPass
 {
-	// Draws the pinch for every published glass window whose HWND is in
-	// `rendered` (the windows DWM drew this frame). Leaves the frame exactly as
-	// DWM composed it if anything is missing or wrong.
-	void RenderPinch(ID3D11Texture2D* target, UINT width, UINT height, const HWND* rendered, int renderedCount);
+	// Returns true when a band changed and the UI thread should upload it.
+	bool RenderBands(ID3D11Texture2D* frame, UINT width, UINT height);
 
 	// Drops every cached device resource. Safe to call when nothing is cached.
 	void Shutdown();
+
+	// Running totals for the log.
+	struct Stats
+	{
+		long rendered;      // bands rendered from a frame
+		long published;     // bands that came back changed, for upload
+		long throttled;     // rendered for change detection only (window still, nothing changing)
+		long shared;        // handed to the UI thread on the GPU (window moving)
+		long drained;       // readbacks collected
+		long hashChanges;   // readbacks that differed from the one before
+	};
+	Stats GetStats();
+
+	// Whether the last frame rendered had any band live (moving, or just
+	// changed). For the log.
+	bool AnyLive();
 }

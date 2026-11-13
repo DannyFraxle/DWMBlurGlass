@@ -147,6 +147,7 @@ namespace DWMBlurGlassGUI.Services
             Config.CustomBlurAmount = ReadFloat("customBlurAmount", 20.0f);
             Config.LuminosityOpacity = ReadFloat("luminosityOpacity", 0.65f);
             Config.GlassIntensity = ReadFloat("glassIntensity", 1.0f);
+            Config.GlassRimThickness = Math.Clamp(ReadInt("glassRimThickness", 12), 1, 64);
             Config.CustomAeroTexture = ReadBool("customAeroTexture", false);
             Config.CustomAeroTexturePath = ReadString("customAeroTexturePath", "");
 
@@ -171,6 +172,12 @@ namespace DWMBlurGlassGUI.Services
             Config.InactiveGradientColor = ReadUInt("inactiveGradientColor", 0xFFB5B5B5);
             Config.ActiveGradientColorDark = ReadUInt("activeGradientColorDark", 0xFFD08410);
             Config.InactiveGradientColorDark = ReadUInt("inactiveGradientColorDark", 0xFF505050);
+            Config.TitleGradientMid = ReadBool("titleGradientMid", false);
+            Config.TitleGradientMidPos = Math.Clamp(ReadInt("titleGradientMidPos", 64), 1, 99);
+            Config.ActiveGradientMidColor = ReadUInt("activeGradientMidColor", 0xFFC77738);
+            Config.InactiveGradientMidColor = ReadUInt("inactiveGradientMidColor", 0xFF969696);
+            Config.ActiveGradientMidColorDark = ReadUInt("activeGradientMidColorDark", 0xFFC77738);
+            Config.InactiveGradientMidColorDark = ReadUInt("inactiveGradientMidColorDark", 0xFF404040);
 
             Config.BlurMethod = (BlurMethod)ReadInt("blurMethod", (int)BlurMethod.CustomBlur);
             Config.EffectType = (EffectType)ReadInt("effectType", (int)EffectType.Blur);
@@ -209,6 +216,7 @@ namespace DWMBlurGlassGUI.Services
             WriteFloat("customBlurAmount", Config.CustomBlurAmount);
             WriteFloat("luminosityOpacity", Config.LuminosityOpacity);
             WriteFloat("glassIntensity", Config.GlassIntensity);
+            WriteInt("glassRimThickness", Config.GlassRimThickness);
             WriteBool("customAeroTexture", Config.CustomAeroTexture);
             WriteString("customAeroTexturePath", Config.CustomAeroTexturePath);
 
@@ -233,6 +241,12 @@ namespace DWMBlurGlassGUI.Services
             WriteUInt("inactiveGradientColor", Config.InactiveGradientColor);
             WriteUInt("activeGradientColorDark", Config.ActiveGradientColorDark);
             WriteUInt("inactiveGradientColorDark", Config.InactiveGradientColorDark);
+            WriteBool("titleGradientMid", Config.TitleGradientMid);
+            WriteInt("titleGradientMidPos", Config.TitleGradientMidPos);
+            WriteUInt("activeGradientMidColor", Config.ActiveGradientMidColor);
+            WriteUInt("inactiveGradientMidColor", Config.InactiveGradientMidColor);
+            WriteUInt("activeGradientMidColorDark", Config.ActiveGradientMidColorDark);
+            WriteUInt("inactiveGradientMidColorDark", Config.InactiveGradientMidColorDark);
 
             WriteInt("blurMethod", (int)Config.BlurMethod);
             WriteInt("effectType", (int)Config.EffectType);

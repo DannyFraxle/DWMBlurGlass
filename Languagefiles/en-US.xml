@@ -45,6 +45,9 @@
 	<gradientvertical>Vertical (XP Media Center)</gradientvertical>
 	<gradientcolor>Gradient end color (active):</gradientcolor>
 	<inactivegradientcolor>Gradient end color (inactive):</inactivegradientcolor>
+	<gradientmid>Add a middle point at:</gradientmid>
+	<gradientmidcolor>Gradient middle color (active):</gradientmidcolor>
+	<inactivegradientmidcolor>Gradient middle color (inactive):</inactivegradientmidcolor>
 	<activecolor>Active text color:</activecolor>
 	<inactivecolor>Inactive text color:</inactivecolor>
 	<preview>Preview</preview>
@@ -67,6 +70,7 @@
 	<crossfadeTime>Animation duration:</crossfadeTime>
 	<useaccentcolor>Use Accent color to override color settings RGB</useaccentcolor>
 	<glassIntensity>Aero reflection texture opacity:</glassIntensity>
+	<glassEdgeThickness>Edge thickness:</glassEdgeThickness>
 	<customAeroTexture>Custom Aero reflection texture:</customAeroTexture>
 	<browse>Browse</browse>
 	<texturepath_error>The selected file cannot be loaded due to permission restrictions. The file must not be located in the user folder (User) or its subdirectories.</texturepath_error>

@@ -178,6 +178,48 @@
                                                VerticalAlignment="Center"/>
                 </Grid>
 
+                <!-- Optional middle point (blend colour -> middle -> end) -->
+                <Grid Margin="0,0,0,6" IsEnabled="{Binding IsGradientEnabled}" Opacity="{Binding IsGradientEnabled, Converter={StaticResource BoolToOpacityConverter}}">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <CheckBox Grid.Column="0" IsChecked="{Binding GradientMidEnabled}" VerticalAlignment="Center">
+                        <TextBlock Text="{Binding Lang[gradientmid]}" FontSize="12"/>
+                    </CheckBox>
+                    <Slider Grid.Column="1" Minimum="1" Maximum="99" Value="{Binding GradientMidPos}" TickFrequency="1" IsSnapToTickEnabled="True" MaxWidth="300" Margin="10,0" VerticalAlignment="Center" IsEnabled="{Binding GradientMidEnabled}"/>
+                    <TextBlock Grid.Column="2" VerticalAlignment="Center" FontSize="12" Width="35" Opacity="{Binding GradientMidEnabled, Converter={StaticResource BoolToOpacityConverter}}">
+                        <Run Text="{Binding GradientMidPos, Mode=OneWay}"/><Run Text="%"/>
+                    </TextBlock>
+                </Grid>
+
+                <Grid Margin="0,0,0,6" IsEnabled="{Binding IsGradientMidEnabled}" Opacity="{Binding IsGradientMidEnabled, Converter={StaticResource BoolToOpacityConverter}}">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="{Binding Lang[gradientmidcolor]}" VerticalAlignment="Center" FontSize="12" />
+                    <controls:ColorSettingItem Grid.Column="1"
+                                               Color="{Binding ActiveGradientMidColor}"
+                                               PickColorCommand="{Binding PickColorCommand}"
+                                               CommandParameter="ActiveGradientMid"
+                                               VerticalAlignment="Center"/>
+                </Grid>
+
+                <Grid Margin="0,0,0,6" IsEnabled="{Binding IsGradientMidEnabled}" Opacity="{Binding IsGradientMidEnabled, Converter={StaticResource BoolToOpacityConverter}}">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="{Binding Lang[inactivegradientmidcolor]}" VerticalAlignment="Center" FontSize="12" />
+                    <controls:ColorSettingItem Grid.Column="1"
+                                               Color="{Binding InactiveGradientMidColor}"
+                                               PickColorCommand="{Binding PickColorCommand}"
+                                               CommandParameter="InactiveGradientMid"
+                                               VerticalAlignment="Center"/>
+                </Grid>
+
                 <Grid Margin="0,0,0,6">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*"/>

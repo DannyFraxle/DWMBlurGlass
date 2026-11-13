@@ -13,6 +13,7 @@
 
 #include <d3d11.h>
 #include <atomic>
+#include <utility>
 
 namespace MDWMBlurGlassExt::D3DPresentHook
 {
@@ -39,8 +40,68 @@ namespace MDWMBlurGlassExt::D3DPresentHook
 		HANDLE g_fuseThread{ nullptr };
 		HANDLE g_fuseStop{ nullptr };
 
-		std::atomic_int g_prePresentCalls{ 0 };
+		std::atomic_int g_presentCalls{ 0 };
+		std::atomic_bool g_loggedBuffer{ false };
 		std::atomic_int g_pinchFrames{ 0 };
+		// How many times each present asked for its buffer: 0 means DWM flipped
+		// (or skipped the flip) without asking, so the pass could not draw.
+		std::atomic_int g_presentsAsked0{ 0 };
+		std::atomic_int g_presentsAsked1{ 0 };
+		std::atomic_int g_presentsAskedMore{ 0 };
+
+		void LogSummary(const char* when)
+		{
+			const auto stats{ LiquidGlassPass::GetStats() };
+			ReconLog::Write("[stats] %s: presents=%d asked(0/1/2+)=%d/%d/%d passFrames=%d  bands rendered=%ld changed=%ld throttled=%ld gpu=%ld %s",
+				when, g_presentCalls.load(), g_presentsAsked0.load(), g_presentsAsked1.load(), g_presentsAskedMore.load(),
+				g_pinchFrames.load(), stats.rendered, stats.published, stats.throttled, stats.shared, GlassScene::LatencySummary().c_str());
+		}
+
+		// While no band is live (every window still, nothing around them
+		// changing): how many presents there are, how many of them hand us the
+		// frame, and what the pass makes of them. Logged every 2 s while there
+		// are any. Render thread only.
+		struct StillCounts
+		{
+			long presents{ 0 };
+			long asked0{ 0 };
+			LiquidGlassPass::Stats base{};
+			ULONGLONG since{ 0 };
+		};
+		StillCounts g_still;
+
+		void LogStill(int asked)
+		{
+			if (g_disabled.load(std::memory_order_relaxed) || !GlassScene::IsEnabled())
+				return;
+			if (!LiquidGlassPass::AnyLive())
+			{
+				++g_still.presents;
+				if (asked == 0)
+					++g_still.asked0;
+			}
+			const ULONGLONG now{ GetTickCount64() };
+			if (!g_still.since)
+			{
+				g_still.since = now;
+				g_still.base = LiquidGlassPass::GetStats();
+				return;
+			}
+			if (now - g_still.since < 2000)
+				return;
+			const auto stats{ LiquidGlassPass::GetStats() };
+			if (g_still.presents)
+			{
+				ReconLog::Write("[still] 2s: presents=%ld asked0=%ld checked=%ld readbacks=%ld changes=%ld shown=%ld live=%ld",
+					g_still.presents, g_still.asked0,
+					stats.throttled - g_still.base.throttled, stats.drained - g_still.base.drained,
+					stats.hashChanges - g_still.base.hashChanges, stats.published - g_still.base.published,
+					stats.shared - g_still.base.shared);
+			}
+			g_still = StillCounts{};
+			g_still.since = now;
+			g_still.base = stats;
+		}
 
 		// ---- fuse -----------------------------------------------------------
 		// File-based rather than registry-based: dwm.exe runs as the DWM-N
@@ -80,249 +141,135 @@ namespace MDWMBlurGlassExt::D3DPresentHook
 				if (!g_disabled.load())
 				{
 					WriteFuse(0);
-					ReconLog::Write("[fuse] clean run: counter cleared  prePresent=%d pinchFrames=%d",
-						g_prePresentCalls.load(), g_pinchFrames.load());
+					ReconLog::Write("[fuse] clean run: counter cleared");
+					LogSummary("5s");
 					ReconLog::Flush();
 				}
+			}
+			// A few more snapshots over the first minute, for diagnosing what
+			// the pass did while someone was actually using the desktop.
+			for (const char* when : { "30s", "60s" })
+			{
+				if (WaitForSingleObject(g_fuseStop, 27500) != WAIT_TIMEOUT)
+					break;
+				LogSummary(when);
+				ReconLog::Flush();
 			}
 			return 0;
 		}
 
-		// ---- which texture is this frame's? ----------------------------------
-		// dwmcore is linked with COMDAT folding, so a one-line getter can share
-		// its address with an unrelated getter of the same shape - which makes
-		// "is this function in the object's vtable" useless as a type check, and
-		// calling one on a guessed `this` a good way to crash-loop the desktop.
-		// So these accessors are HOOKED: DWM calls them, and we keep what they
-		// return.
 
-		ID3D11RenderTargetView* STDMETHODCALLTYPE CDeviceTextureTarget_GetRenderTargetView(void* This);
+		// ---- the hooks ------------------------------------------------------
+		// Only functions with a unique address are hooked. dwmcore is linked
+		// with COMDAT folding: CDeviceTextureTarget::GetRenderTargetView, for
+		// instance, is one `mov rax,[rcx+10h]; ret` shared with
+		// CD2DSharedBuffer::GetBufferPointer and CKernelTransport::GetWorkEvent,
+		// so its "result" is not always a render target view. The two below
+		// were each checked to stand alone.
+
+		HRESULT STDMETHODCALLTYPE CDDisplayRenderTarget_Present(void* This);
 		ID3D11Resource* STDMETHODCALLTYPE CDDisplaySwapChainBuffer_GetD3D11Resource(void* This);
-		HRESULT STDMETHODCALLTYPE CDDisplaySwapChain_PrePresent(void* This, bool a2);
-		HRESULT STDMETHODCALLTYPE CWindowNode_RenderContent(DWM::CWindowNode* This, void* drawingContext, bool* a3);
 
-		MinHook g_funGetRenderTargetView{ "CDeviceTextureTarget::GetRenderTargetView", CDeviceTextureTarget_GetRenderTargetView };
+		MinHook g_funPresent{ "CDDisplayRenderTarget::Present", CDDisplayRenderTarget_Present };
 		MinHook g_funGetD3D11Resource{ "CDDisplaySwapChainBuffer::GetD3D11Resource", CDDisplaySwapChainBuffer_GetD3D11Resource };
-		MinHook g_funDDisplayPrePresent{ "CDDisplaySwapChain::PrePresent", CDDisplaySwapChain_PrePresent };
-		MinHook g_funRenderContent{ "CWindowNode::RenderContent", CWindowNode_RenderContent };
 
-		// Everything below is touched only on DWM's render thread.
+		// Set on the render thread for the duration of CDDisplayRenderTarget::
+		// Present. thread_local, so a GetD3D11Resource call from any other
+		// thread can never start the pass on DWM's device context.
+		thread_local bool t_inPresent{ false };
+		thread_local int t_askedThisPresent{ 0 };
+		// The first buffer a present asks for is the frame being presented.
+		// DWM only redraws what changed, though, and copies the rest over from
+		// the previous buffer (the second one it asks for) further into the
+		// present - so at the first ask, anything that did not change THIS
+		// frame is still three frames old in it (the swapchain has three).
+		// Reading it there showed a still window's surroundings stale and
+		// flickering between buffers. So the buffer is only noted here, and
+		// read once the present has returned and the frame is complete.
+		thread_local ID3D11Resource* t_frame{ nullptr };
 
-		// Render targets seen this session, each classified once (classifying
-		// means touching COM). DWM cycles through a handful.
-		struct RTVInfo
-		{
-			ID3D11RenderTargetView* rtv;
-			ID3D11Texture2D* texture;   // not addref'd; identity only
-			UINT width;
-			UINT height;
-		};
-		constexpr int kMaxRTVInfo = 64;
-		RTVInfo g_rtvInfo[kMaxRTVInfo]{};
-		int g_rtvInfoCount{ 0 };
-
-		// The textures DWM actually hands to the display - the swapchain
-		// buffers. The pass only ever draws into one of these, so it can never
-		// end up writing into some large intermediate that happens to be
-		// display-sized.
-		constexpr int kMaxBuffers = 8;
-		ID3D11Texture2D* g_buffers[kMaxBuffers]{};
-		int g_bufferCount{ 0 };
-
-		// The display-sized target DWM most recently composed into this frame.
-		ID3D11Texture2D* g_frameTarget{ nullptr };
-		UINT g_frameWidth{ 0 };
-		UINT g_frameHeight{ 0 };
-
-		// Windows DWM drew this frame.
-		constexpr int kMaxRendered = 128;
-		HWND g_rendered[kMaxRendered]{};
-		int g_renderedCount{ 0 };
-
-		bool IsSwapchainBuffer(ID3D11Texture2D* texture)
-		{
-			for (int i = 0; i < g_bufferCount; ++i)
-			{
-				if (g_buffers[i] == texture)
-					return true;
-			}
-			return false;
-		}
-
-		void NoteRenderTarget(ID3D11RenderTargetView* rtv)
-		{
-			for (int i = 0; i < g_rtvInfoCount; ++i)
-			{
-				if (g_rtvInfo[i].rtv != rtv)
-					continue;
-				if (g_rtvInfo[i].texture && g_rtvInfo[i].width >= 640 && g_rtvInfo[i].height >= 480)
-				{
-					g_frameTarget = g_rtvInfo[i].texture;
-					g_frameWidth = g_rtvInfo[i].width;
-					g_frameHeight = g_rtvInfo[i].height;
-				}
-				return;
-			}
-
-			RTVInfo info{ rtv, nullptr, 0, 0 };
-			ID3D11Resource* resource = nullptr;
-			rtv->GetResource(&resource);
-			if (resource)
-			{
-				ID3D11Texture2D* texture = nullptr;
-				if (SUCCEEDED(resource->QueryInterface(__uuidof(ID3D11Texture2D), reinterpret_cast<void**>(&texture))) && texture)
-				{
-					D3D11_TEXTURE2D_DESC td{};
-					texture->GetDesc(&td);
-					info.texture = texture;
-					info.width = td.Width;
-					info.height = td.Height;
-					texture->Release();   // DWM owns it; we only note the pointer
-				}
-				resource->Release();
-			}
-
-			// DWM recreates targets now and then; when the table fills, start
-			// over rather than stop recognising new ones.
-			if (g_rtvInfoCount >= kMaxRTVInfo)
-				g_rtvInfoCount = 0;
-			g_rtvInfo[g_rtvInfoCount++] = info;
-			if (info.texture && info.width >= 640 && info.height >= 480)
-			{
-				g_frameTarget = info.texture;
-				g_frameWidth = info.width;
-				g_frameHeight = info.height;
-			}
-		}
-
-		void GuardedNoteRenderTarget(ID3D11RenderTargetView* rtv)
-		{
-			__try
-			{
-				NoteRenderTarget(rtv);
-			}
-			__except (EXCEPTION_EXECUTE_HANDLER)
-			{
-				g_disabled.store(true, std::memory_order_relaxed);
-			}
-		}
-
-		ID3D11RenderTargetView* STDMETHODCALLTYPE CDeviceTextureTarget_GetRenderTargetView(void* This)
-		{
-			auto* result = g_funGetRenderTargetView.call_org(This);
-			if (result && !g_disabled.load(std::memory_order_relaxed))
-				GuardedNoteRenderTarget(result);
-			return result;
-		}
-
-		void NoteSwapchainBuffer(ID3D11Resource* resource)
+		// Reads the presented frame - the bands go to Composition, never into
+		// this buffer.
+		bool RenderFrom(ID3D11Resource* resource)
 		{
 			ID3D11Texture2D* texture = nullptr;
 			if (FAILED(resource->QueryInterface(__uuidof(ID3D11Texture2D), reinterpret_cast<void**>(&texture))) || !texture)
-				return;
-			texture->Release();   // identity only
-			if (IsSwapchainBuffer(texture))
-				return;
-			if (g_bufferCount >= kMaxBuffers)
-				g_bufferCount = 0;
-			g_buffers[g_bufferCount++] = texture;
+				return false;
 
 			D3D11_TEXTURE2D_DESC td{};
 			texture->GetDesc(&td);
-			ReconLog::Write("[swapbuf] tex=%p %ux%u fmt=%d bind=0x%X", texture, td.Width, td.Height,
-				static_cast<int>(td.Format), td.BindFlags);
-		}
-
-		void GuardedNoteSwapchainBuffer(ID3D11Resource* resource)
-		{
-			__try
+			if (!g_loggedBuffer.exchange(true))
 			{
-				NoteSwapchainBuffer(resource);
+				ReconLog::Write("[present] frame %ux%u fmt=%d bind=0x%X (read after the present)",
+					td.Width, td.Height, static_cast<int>(td.Format), td.BindFlags);
 			}
-			__except (EXCEPTION_EXECUTE_HANDLER)
+			bool changed{ false };
+			if (td.Width >= 640 && td.Height >= 480)
 			{
-				g_disabled.store(true, std::memory_order_relaxed);
-			}
-		}
-
-		// Asked for during the present submission - after PrePresent - so it
-		// only ever teaches us which textures ARE swapchain buffers; the
-		// render-target hook says which one this frame is going into.
-		ID3D11Resource* STDMETHODCALLTYPE CDDisplaySwapChainBuffer_GetD3D11Resource(void* This)
-		{
-			auto* result = g_funGetD3D11Resource.call_org(This);
-			if (result && !g_disabled.load(std::memory_order_relaxed))
-				GuardedNoteSwapchainBuffer(result);
-			return result;
-		}
-
-		void NoteRendered(DWM::CWindowNode* node)
-		{
-			const HWND hwnd{ node->GetHwnd() };
-			if (!hwnd)
-				return;
-			for (int i = 0; i < g_renderedCount; ++i)
-			{
-				if (g_rendered[i] == hwnd)
-					return;
-			}
-			if (g_renderedCount < kMaxRendered)
-				g_rendered[g_renderedCount++] = hwnd;
-		}
-
-		void GuardedNoteRendered(DWM::CWindowNode* node)
-		{
-			__try
-			{
-				NoteRendered(node);
-			}
-			__except (EXCEPTION_EXECUTE_HANDLER)
-			{
-				g_disabled.store(true, std::memory_order_relaxed);
-			}
-		}
-
-		HRESULT STDMETHODCALLTYPE CWindowNode_RenderContent(DWM::CWindowNode* This, void* drawingContext, bool* a3)
-		{
-			if (!g_disabled.load(std::memory_order_relaxed))
-				GuardedNoteRendered(This);
-			return g_funRenderContent.call_org(This, drawingContext, a3);
-		}
-
-		void Pinch()
-		{
-			ID3D11Texture2D* target{ g_frameTarget };
-			if (target && IsSwapchainBuffer(target))
-			{
-				LiquidGlassPass::RenderPinch(target, g_frameWidth, g_frameHeight, g_rendered, g_renderedCount);
+				changed = LiquidGlassPass::RenderBands(texture, td.Width, td.Height);
 				g_pinchFrames.fetch_add(1, std::memory_order_relaxed);
 			}
+			texture->Release();
+			return changed;
 		}
 
-		void GuardedPinch()
+		bool GuardedRenderFrom(ID3D11Resource* resource)
 		{
 			__try
 			{
-				Pinch();
+				return RenderFrom(resource);
 			}
 			__except (EXCEPTION_EXECUTE_HANDLER)
 			{
 				g_disabled.store(true, std::memory_order_relaxed);
 				ReconLog::Write("[pass] FAULTED - pinch disabled until DWMBlurGlass is reloaded");
+				return false;
 			}
 		}
 
-		HRESULT STDMETHODCALLTYPE CDDisplaySwapChain_PrePresent(void* This, bool a2)
+		ID3D11Resource* STDMETHODCALLTYPE CDDisplaySwapChainBuffer_GetD3D11Resource(void* This)
 		{
-			g_prePresentCalls.fetch_add(1, std::memory_order_relaxed);
-			// Composition is finished and the present has not gone out: the
-			// one moment the whole frame is final and still writable.
-			if (!g_disabled.load(std::memory_order_relaxed) && GlassScene::IsEnabled())
-				GuardedPinch();
+			auto* result = g_funGetD3D11Resource.call_org(This);
+			if (t_inPresent)
+			{
+				if (t_askedThisPresent == 0 && result && !t_frame)
+				{
+					// Held until the present returns.
+					result->AddRef();
+					t_frame = result;
+				}
+				++t_askedThisPresent;
+			}
+			return result;
+		}
 
-			g_renderedCount = 0;
-			g_frameTarget = nullptr;
-			return g_funDDisplayPrePresent.call_org(This, a2);
+		HRESULT STDMETHODCALLTYPE CDDisplayRenderTarget_Present(void* This)
+		{
+			g_presentCalls.fetch_add(1, std::memory_order_relaxed);
+			t_inPresent = true;
+			t_askedThisPresent = 0;
+			t_frame = nullptr;
+			const HRESULT hr{ g_funPresent.call_org(This) };
+			t_inPresent = false;
+			if (t_askedThisPresent == 0)
+				g_presentsAsked0.fetch_add(1, std::memory_order_relaxed);
+			else if (t_askedThisPresent == 1)
+				g_presentsAsked1.fetch_add(1, std::memory_order_relaxed);
+			else
+				g_presentsAskedMore.fetch_add(1, std::memory_order_relaxed);
+
+			if (ID3D11Resource* frame{ std::exchange(t_frame, nullptr) })
+			{
+				// The frame is complete now. Hand any changed band to the UI
+				// thread, which draws it into the window's Composition surface.
+				// Posting never blocks.
+				if (SUCCEEDED(hr) && !g_disabled.load(std::memory_order_relaxed) && GlassScene::IsEnabled() &&
+					GuardedRenderFrom(frame))
+					GlassScene::NotifyBandsChanged();
+				frame->Release();
+			}
+			LogStill(t_askedThisPresent);
+			return hr;
 		}
 	}
 
@@ -347,12 +294,14 @@ namespace MDWMBlurGlassExt::D3DPresentHook
 		}
 		WriteFuse(fuse + 1);
 
-		const auto st1 = g_funGetRenderTargetView.Attach();
-		const auto st2 = g_funGetD3D11Resource.Attach();
-		const auto st3 = g_funRenderContent.Attach();
-		const auto st4 = g_funDDisplayPrePresent.Attach();
-		ReconLog::Write("[attach] GetRTV=%d GetD3D11Resource=%d RenderContent=%d PrePresent=%d (0=MH_OK)",
-			(int)st1, (int)st2, (int)st3, (int)st4);
+		// Leaves first, the per-frame anchor last, so the anchor never runs
+		// against half-attached state.
+		const auto st1 = g_funGetD3D11Resource.Attach();
+		const auto st2 = g_funPresent.Attach();
+		ReconLog::Write("[attach] GetD3D11Resource=%d CDDisplayRenderTarget::Present=%d (0=MH_OK)",
+			(int)st1, (int)st2);
+		if (st1 != MH_OK || st2 != MH_OK)
+			ReconLog::Write("[attach] a hook failed: the pinch cannot run on this build (symbols missing or changed)");
 		ReconLog::Flush();
 
 		g_fuseStop = CreateEventW(nullptr, TRUE, FALSE, nullptr);
@@ -378,25 +327,18 @@ namespace MDWMBlurGlassExt::D3DPresentHook
 			g_fuseStop = nullptr;
 		}
 
-		// PrePresent first, so no new pass starts while the rest come off.
-		g_funDDisplayPrePresent.Detach();
-		g_funRenderContent.Detach();
+		// The anchor first, so no new pass starts while the rest come off.
+		g_funPresent.Detach();
 		g_funGetD3D11Resource.Detach();
-		g_funGetRenderTargetView.Detach();
 		// Give a detour already in flight on the render thread a moment to
 		// return before its state is torn down.
 		Sleep(50);
 
-		g_rtvInfoCount = 0;
-		g_bufferCount = 0;
-		g_renderedCount = 0;
-		g_frameTarget = nullptr;
+		const bool clean = !g_disabled.load();
+		ReconLog::Write("[detach] disabled=%d", g_disabled.load() ? 1 : 0);
+		LogSummary("detach");
 		LiquidGlassPass::Shutdown();
 		GlassRects::Clear();
-
-		const bool clean = !g_disabled.load();
-		ReconLog::Write("[detach] disabled=%d prePresent=%d pinchFrames=%d",
-			g_disabled.load() ? 1 : 0, g_prePresentCalls.load(), g_pinchFrames.load());
 		ReconLog::Stop();
 
 		// A clean detach is a clean run.
@@ -404,8 +346,12 @@ namespace MDWMBlurGlassExt::D3DPresentHook
 			WriteFuse(0);
 
 		g_disabled.store(false);
-		g_prePresentCalls.store(0);
+		g_presentCalls.store(0);
 		g_pinchFrames.store(0);
+		g_presentsAsked0.store(0);
+		g_presentsAsked1.store(0);
+		g_presentsAskedMore.store(0);
+		g_loggedBuffer.store(false);
 	}
 
 	void Refresh()

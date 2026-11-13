@@ -199,6 +199,33 @@ namespace MDWMBlurGlass
 			cfgData.inactiveGradientColorDark = (COLORREF)_wtoll(value.data());
 		});
 
+		cfgData.titleGradientMid = GetConfigBool(L"titleGradientMid");
+
+		GetCfgValueInternal(L"titleGradientMidPos",
+		{
+			cfgData.titleGradientMidPos = std::clamp(_wtoi(value.data()), 1, 99);
+		});
+
+		GetCfgValueInternal(L"activeGradientMidColor",
+		{
+			cfgData.activeGradientMidColor = (COLORREF)_wtoll(value.data());
+		});
+
+		GetCfgValueInternal(L"inactiveGradientMidColor",
+		{
+			cfgData.inactiveGradientMidColor = (COLORREF)_wtoll(value.data());
+		});
+
+		GetCfgValueInternal(L"activeGradientMidColorDark",
+		{
+			cfgData.activeGradientMidColorDark = (COLORREF)_wtoll(value.data());
+		});
+
+		GetCfgValueInternal(L"inactiveGradientMidColorDark",
+		{
+			cfgData.inactiveGradientMidColorDark = (COLORREF)_wtoll(value.data());
+		});
+
 		GetCfgValueInternal(L"blurMethod",
 		{
 			cfgData.blurmethod = (blurMethod)std::clamp(_wtoi(value.data()), 0, 2);
