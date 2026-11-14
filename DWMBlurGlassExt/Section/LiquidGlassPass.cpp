@@ -76,6 +76,7 @@ namespace MDWMBlurGlassExt::LiquidGlassPass
 			RECT renderedFor[kRing]{};   // screen rect each readback was rendered at
 			uint64_t renderedAt[kRing]{};   // QueryPerformanceCounter, likewise
 			bool handedOver[kRing]{};   // that render already went to the UI thread on the GPU
+			UINT renderedDepth[kRing]{};   // px in from the sides past which it is all transparent
 			int next{ 0 };
 			ULONGLONG lastUsed{ 0 };
 			ULONGLONG lastRendered{ 0 };
@@ -613,7 +614,11 @@ namespace MDWMBlurGlassExt::LiquidGlassPass
 		};
 		ChangeLog g_changeLog;
 
-		bool Differs(Band& band, const RECT& rect, const void* pixels, UINT rowPitch)
+		// `depth`: pixels further in than this from every side of the band are
+		// always transparent (the shader draws nothing past the rim), so only the
+		// frame of the band around them is compared. A titlebar band is all
+		// frame; a whole element - Start, a flyout - is mostly middle.
+		bool Differs(Band& band, const RECT& rect, UINT depth, const void* pixels, UINT rowPitch)
 		{
 			const size_t count{ static_cast<size_t>(band.width) * band.height };
 			const auto* src{ static_cast<const uint8_t*>(pixels) };
@@ -637,20 +642,31 @@ namespace MDWMBlurGlassExt::LiquidGlassPass
 			{
 				const auto* row{ src + static_cast<size_t>(y) * rowPitch };
 				const auto* ref{ reinterpret_cast<const uint8_t*>(band.reference.data() + static_cast<size_t>(y) * band.width) };
-				for (UINT x = 0; x < band.width; ++x)
+				auto compare{ [&](UINT from, UINT to)
 				{
-					int delta{ 0 };
-					for (int c = 0; c < 4; ++c)
-						delta = (std::max)(delta, std::abs(static_cast<int>(row[x * 4 + c]) - static_cast<int>(ref[x * 4 + c])));
-					if (delta > kMinChannelDelta)
+					for (UINT x = from; x < to; ++x)
 					{
-						++changed;
-						box.left = (std::min)(box.left, static_cast<LONG>(x));
-						box.top = (std::min)(box.top, static_cast<LONG>(y));
-						box.right = (std::max)(box.right, static_cast<LONG>(x));
-						box.bottom = (std::max)(box.bottom, static_cast<LONG>(y));
+						int delta{ 0 };
+						for (int c = 0; c < 4; ++c)
+							delta = (std::max)(delta, std::abs(static_cast<int>(row[x * 4 + c]) - static_cast<int>(ref[x * 4 + c])));
+						if (delta > kMinChannelDelta)
+						{
+							++changed;
+							box.left = (std::min)(box.left, static_cast<LONG>(x));
+							box.top = (std::min)(box.top, static_cast<LONG>(y));
+							box.right = (std::max)(box.right, static_cast<LONG>(x));
+							box.bottom = (std::max)(box.bottom, static_cast<LONG>(y));
+						}
+						maxDelta = (std::max)(maxDelta, delta);
 					}
-					maxDelta = (std::max)(maxDelta, delta);
+				} };
+				const bool middleRow{ depth > 0 && y >= depth && y + depth < band.height };
+				if (!middleRow || 2 * depth >= band.width)
+					compare(0, band.width);
+				else
+				{
+					compare(0, depth);
+					compare(band.width - depth, band.width);
 				}
 			}
 
@@ -704,7 +720,7 @@ namespace MDWMBlurGlassExt::LiquidGlassPass
 					if (FAILED(hr))
 						continue;
 					g_statDrained.fetch_add(1, std::memory_order_relaxed);
-					if (Differs(band, band.renderedFor[slot], mapped.pData, mapped.RowPitch))
+					if (Differs(band, band.renderedFor[slot], band.renderedDepth[slot], mapped.pData, mapped.RowPitch))
 					{
 						band.lastChangeAt = now;
 						g_statHashChanges.fetch_add(1, std::memory_order_relaxed);
@@ -992,6 +1008,10 @@ namespace MDWMBlurGlassExt::LiquidGlassPass
 				band->handedOver[band->next] = handedOver;
 				band->renderedFor[band->next] = entry.rect;
 				band->renderedAt[band->next] = renderedAt;
+				// How deep in from the band's sides anything is drawn: the rim,
+				// plus what a rounded corner pulls inward along its diagonal
+				// (1 - 1/sqrt2 of the radius), plus a little slack.
+				band->renderedDepth[band->next] = static_cast<UINT>(std::ceil(rim + 0.3f * entry.cornerRadius)) + 2;
 				band->next = (band->next + 1) % kRing;
 				// Not live: nothing else may present to collect it. Ask for a
 				// few more frames, unless this present is one of those.

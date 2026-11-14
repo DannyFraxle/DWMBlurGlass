@@ -196,30 +196,39 @@ namespace MDWMBlurGlassExt::LiquidGlassBackdrop
 		effectBrush.SetSourceParameter(c_lipAcrossParameter, makeGradient({ 1.f, 0.f }));
 		effectBrush.SetSourceParameter(c_lipDownParameter, makeGradient({ 0.f, 1.f }));
 
-		// No surface yet - creating one here, on DWM's render path, is exactly
-		// what crashed dwm.exe before. GlassScene attaches it later, from DWM's
-		// own message loop. Aligned top-left at natural size, so the band lands
-		// where it is drawn in the surface.
-		auto pinchBrush{ compositor.CreateSurfaceBrush() };
-		pinchBrush.Stretch(wuc::CompositionStretch::None);
-		pinchBrush.HorizontalAlignmentRatio(0.f);
-		pinchBrush.VerticalAlignmentRatio(0.f);
-		effectBrush.SetSourceParameter(c_pinchParameter, pinchBrush);
+		// No band yet: a transparent colour brush holds its place until
+		// GlassScene has one (see SetPinch). It must NOT be a surface brush
+		// without a surface - Composition then draws nothing at all for the
+		// whole effect, not just the band, and every backdrop that never gets a
+		// band (menus, the taskbar, client-area blur, windows with no real
+		// titlebar) came out fully transparent. Nor can a surface be made
+		// here: creating one on DWM's render path is what crashed dwm.exe.
+		effectBrush.SetSourceParameter(c_pinchParameter, compositor.CreateColorBrush({ 0, 0, 0, 0 }));
 		return effectBrush;
 	}
 
-	// The band input of a liquid-glass brush, or null for any other brush.
-	inline wuc::CompositionSurfaceBrush GetPinchBrush(const wuc::CompositionBrush& brush) try
+	// The brush itself if it is a liquid-glass material (it has a band
+	// input), or null for any other brush.
+	inline wuc::CompositionEffectBrush GetMaterial(const wuc::CompositionBrush& brush) try
 	{
 		auto effectBrush{ brush ? brush.try_as<wuc::CompositionEffectBrush>() : nullptr };
-		if (!effectBrush)
+		if (!effectBrush || !effectBrush.GetSourceParameter(c_pinchParameter))
 			return nullptr;
-		auto source{ effectBrush.GetSourceParameter(c_pinchParameter) };
-		return source ? source.try_as<wuc::CompositionSurfaceBrush>() : nullptr;
+		return effectBrush;
 	}
 	catch (...)
 	{
 		return nullptr;
+	}
+
+	// Plugs a band brush into a material's band input; a null band puts the
+	// transparent placeholder back.
+	inline void SetPinch(const wuc::CompositionEffectBrush& material, const wuc::CompositionBrush& band)
+	{
+		if (!material)
+			return;
+		material.SetSourceParameter(c_pinchParameter,
+			band ? band : wuc::CompositionBrush{ material.Compositor().CreateColorBrush({ 0, 0, 0, 0 }) });
 	}
 
 	namespace Detail

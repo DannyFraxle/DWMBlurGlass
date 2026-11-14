@@ -758,7 +758,10 @@ namespace MDWMBlurGlassExt
 				constexpr LONG minCaptionHeight{ 8 };
 				RECT caption{};
 				RECT screenRect{};
-				if (GlassScene::IsEnabled() &&
+				wuc::CompositionEffectBrush material{ nullptr };
+				if (GlassScene::IsEnabled())
+					material = LiquidGlassBackdrop::GetMaterial(m_backdropBrush);
+				if (material &&
 					IntersectRect(&caption, &m_captionRect, &regionBox) &&
 					caption.bottom - caption.top >= minCaptionHeight &&
 					GetSrcWindow()->GetActualWindowRect(&screenRect, false, true, false))
@@ -774,13 +777,33 @@ namespace MDWMBlurGlassExt
 					// The band is composited inside the material, and the sprite
 					// it paints starts at the region box's corner.
 					const POINT bandOffset{ caption.left - regionBox.left, caption.top - regionBox.top };
-					const auto pinchBrush{ LiquidGlassBackdrop::GetPinchBrush(m_backdropBrush) };
-					if (captionEdges && pinchBrush)
+					if (captionEdges)
 					{
 						GlassScene::UpdateGlass(this, m_data->GetHWND(), glass, captionEdges, m_activate,
-							m_spriteVisual, pinchBrush, bandOffset);
+							m_spriteVisual, material, bandOffset);
 						return;
 					}
+				}
+
+				// Elements that are glass all over - the taskbar, Start, flyouts,
+				// anything that asked DWM for an accent blur - have no titlebar and
+				// no client area for a band to run into, so the reflection goes
+				// along every side of them. (Sides at the screen border, like the
+				// taskbar's bottom, are dropped when the scene is published.)
+				// Ordinary windows still only ever get it on their titlebar.
+				constexpr LONG minElementSide{ 8 };
+				if (material &&
+					m_kind == CompositedBackdropKind::Accent &&
+					regionBox.right - regionBox.left >= minElementSide &&
+					regionBox.bottom - regionBox.top >= minElementSide &&
+					GetSrcWindow()->GetActualWindowRect(&screenRect, false, true, false))
+				{
+					const LONG dx{ screenRect.left - m_windowRect.left };
+					const LONG dy{ screenRect.top - m_windowRect.top };
+					const RECT glass{ regionBox.left + dx, regionBox.top + dy, regionBox.right + dx, regionBox.bottom + dy };
+					GlassScene::UpdateGlass(this, m_data->GetHWND(), glass, LiquidGlassBackdrop::AllEdges, m_activate,
+						m_spriteVisual, material, POINT{ 0, 0 });
+					return;
 				}
 			}
 		}

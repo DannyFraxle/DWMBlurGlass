@@ -27,16 +27,21 @@ namespace MDWMBlurGlassExt::GlassScene
 	void Refresh();
 
 	// From a glass window's backdrop visual whenever it validates.
-	//  screenRect  - the titlebar, screen px
+	//  screenRect  - the glass with the band - a titlebar, or a whole element
+	//                such as the taskbar or a flyout - in screen px
 	//  edges       - which sides of it are real window edges (GlassRects::EdgeBits)
 	//  kickVisual  - kept animating while the band settles, so DWM keeps
 	//                presenting frames for the render thread to look at
-	//  pinchBrush  - the glass material's band input (see LiquidGlassBackdrop)
-	//  bandOffset  - where the titlebar starts inside the backdrop visual
+	//  material    - the glass material; its band input is plugged into a
+	//                surface brush of ours once there is a band to show (see
+	//                LiquidGlassBackdrop::SetPinch)
+	//  bandOffset  - where the glass starts inside the backdrop visual
 	void UpdateGlass(const void* owner, HWND hwnd, const RECT& screenRect, uint8_t edges, bool active,
 		const winrt::Windows::UI::Composition::Visual& kickVisual,
-		const winrt::Windows::UI::Composition::CompositionSurfaceBrush& pinchBrush,
+		const winrt::Windows::UI::Composition::CompositionEffectBrush& material,
 		POINT bandOffset);
+	// The backdrop no longer gets a band: its material goes back to the
+	// transparent placeholder, so an old band is not left showing.
 	void RemoveGlass(const void* owner);
 
 	// After any top-level window validates: re-publish what is on screen.

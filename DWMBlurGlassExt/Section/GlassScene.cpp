@@ -10,6 +10,7 @@
 #include "CommonDef.h"
 #include "wil.h"
 #include "../Helper/ReconLog.h"
+#include "../Backdrops/LiquidGlassBackdrop.hpp"
 #include <d2d1_1.h>
 #include <d3d11.h>
 #include <dxgi.h>
@@ -53,7 +54,11 @@ namespace MDWMBlurGlassExt::GlassScene
 			bool active;
 			ULONGLONG changedAt;
 			wuc::Visual kick{ nullptr };
+			// The backdrop's material, and our brush for its band input -
+			// created, and plugged in, only once there is a band to show.
+			wuc::CompositionEffectBrush material{ nullptr };
 			wuc::CompositionSurfaceBrush pinch{ nullptr };
+			wuc::CompositionEffectBrush pinchIn{ nullptr };   // material `pinch` is plugged into
 			POINT bandOffset;
 			wuc::CompositionDrawingSurface surface{ nullptr };
 			SIZE surfaceSize;
@@ -107,7 +112,7 @@ namespace MDWMBlurGlassExt::GlassScene
 		{
 			uint64_t calls{ 0 };        // UploadPending ran
 			uint64_t lockMiss{ 0 };     // our lock was busy
-			uint64_t noBrush{ 0 };      // a glass without a pinch brush
+			uint64_t noBrush{ 0 };      // a glass without a material
 			uint64_t taken{ 0 };        // a newer band was taken
 			uint64_t staleSkip{ 0 };    // readback band for an old position
 			uint64_t acquireFail{ 0 };  // shared texture held by the render thread
@@ -229,7 +234,7 @@ namespace MDWMBlurGlassExt::GlassScene
 		void EnsureSurface(Glass& glass, UINT width, UINT height)
 		{
 			g_step = "graphics device";
-			EnsureGraphicsDevice(glass.pinch.Compositor());
+			EnsureGraphicsDevice(glass.material.Compositor());
 			const SIZE size{ glass.bandOffset.x + static_cast<LONG>(width), glass.bandOffset.y + static_cast<LONG>(height) };
 			if (!glass.surface)
 			{
@@ -406,10 +411,26 @@ namespace MDWMBlurGlassExt::GlassScene
 				static_cast<unsigned>(device->GetFeatureLevel()));
 		}
 
+		// Aligned top-left at natural size, so the band lands where it is drawn
+		// in the surface.
 		void Show(Glass& glass)
 		{
+			if (!glass.pinch)
+			{
+				g_step = "band brush";
+				glass.pinch = glass.material.Compositor().CreateSurfaceBrush();
+				glass.pinch.Stretch(wuc::CompositionStretch::None);
+				glass.pinch.HorizontalAlignmentRatio(0.f);
+				glass.pinch.VerticalAlignmentRatio(0.f);
+			}
 			if (glass.pinch.Surface() != glass.surface)
 				glass.pinch.Surface(glass.surface);
+			if (glass.pinchIn != glass.material)
+			{
+				g_step = "plug band in";
+				LiquidGlassBackdrop::SetPinch(glass.material, glass.pinch);
+				glass.pinchIn = glass.material;
+			}
 			glass.shown = true;
 		}
 
@@ -569,7 +590,7 @@ namespace MDWMBlurGlassExt::GlassScene
 				static PinchBands::Band band;   // UI thread only; keeps its pixel buffer
 				for (auto& glass : g_glass)
 				{
-					if (!glass.pinch)
+					if (!glass.material)
 					{
 						g_diag.noBrush++;
 						continue;
@@ -786,9 +807,9 @@ namespace MDWMBlurGlassExt::GlassScene
 	}
 
 	void UpdateGlass(const void* owner, HWND hwnd, const RECT& screenRect, uint8_t edges, bool active,
-		const wuc::Visual& kickVisual, const wuc::CompositionSurfaceBrush& pinchBrush, POINT bandOffset)
+		const wuc::Visual& kickVisual, const wuc::CompositionEffectBrush& material, POINT bandOffset)
 	{
-		if (!g_enabled || !owner)
+		if (!g_enabled || !owner || !material)
 			return;
 
 		bool kick{ false };
@@ -805,7 +826,7 @@ namespace MDWMBlurGlassExt::GlassScene
 				glass.active = active;
 				glass.changedAt = GetTickCount64();
 				glass.kick = kickVisual;
-				glass.pinch = pinchBrush;
+				glass.material = material;
 				glass.bandOffset = bandOffset;
 				g_glass.push_back(std::move(glass));
 				kick = true;
@@ -829,11 +850,21 @@ namespace MDWMBlurGlassExt::GlassScene
 				// live resize.
 				// The material is rebuilt on activation and colour changes; give
 				// the new one the band straight away.
-				if (it->pinch != pinchBrush)
+				if (it->material != material)
 				{
-					it->pinch = pinchBrush;
-					if (pinchBrush && it->surface && it->shown)
-						pinchBrush.Surface(it->surface);
+					it->material = material;
+					if (it->pinch && it->shown)
+					{
+						try
+						{
+							LiquidGlassBackdrop::SetPinch(material, it->pinch);
+							it->pinchIn = material;
+						}
+						catch (...)
+						{
+							// Device lost; the next band plugs it in (Show).
+						}
+					}
 				}
 				it->hwnd = hwnd;
 				it->rect = screenRect;
@@ -850,14 +881,34 @@ namespace MDWMBlurGlassExt::GlassScene
 	void RemoveGlass(const void* owner)
 	{
 		bool removed{ false };
+		wuc::CompositionEffectBrush unplug{ nullptr };
 		{
 			std::lock_guard guard{ g_lock };
 			const auto before{ g_glass.size() };
-			std::erase_if(g_glass, [&](const Glass& g) { return g.owner == owner; });
+			std::erase_if(g_glass, [&](const Glass& g)
+			{
+				if (g.owner != owner)
+					return false;
+				if (g.pinchIn && g.pinchIn == g.material)
+					unplug = g.material;
+				return true;
+			});
 			removed = g_glass.size() != before;
 		}
 		if (removed)
 		{
+			// A material that stays in use (the window just stopped qualifying
+			// for a band) must not keep showing its last one.
+			if (unplug)
+			{
+				try
+				{
+					LiquidGlassBackdrop::SetPinch(unplug, nullptr);
+				}
+				catch (...)
+				{
+				}
+			}
 			PinchBands::Forget(owner);
 			// Stop the render thread rendering it straight away.
 			Flush();
@@ -886,7 +937,7 @@ namespace MDWMBlurGlassExt::GlassScene
 
 			for (const auto& glass : g_glass)
 			{
-				if (!glass.pinch)
+				if (!glass.material)
 					continue;
 				if (glass.retry)
 					anyHidden = true;
