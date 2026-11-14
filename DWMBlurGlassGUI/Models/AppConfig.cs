@@ -113,6 +113,20 @@ namespace DWMBlurGlassGUI.Models
         [ObservableProperty]
         private int _glassRimThickness = 12;
 
+        // Bubble Glass: how much the reflection is enlarged at the window edge
+        // (glassStretchEdge, 0.1-2) and at the inner end of the band
+        // (glassStretchMiddle, 0.1-10). It runs smoothly from one to the other.
+        [ObservableProperty]
+        private float _glassStretchEdge = 0.6f;
+
+        [ObservableProperty]
+        private float _glassStretchMiddle = 2.0f;
+
+        // Bubble Glass: how much of the band, from its inner end, the
+        // reflection fades in over, percent (glassFadeDistance, 5-100).
+        [ObservableProperty]
+        private int _glassFadeDistance = 100;
+
         [ObservableProperty]
         private bool _customAeroTexture = false;
 

@@ -277,6 +277,21 @@ namespace MDWMBlurGlass
 			cfgData.glassRimThickness = std::clamp(_wtoi(value.data()), 1, 64);
 		});
 
+		GetCfgValueInternal(L"glassStretchEdge",
+		{
+			cfgData.glassStretchEdge = (float)std::clamp(_wtof(value.data()), 0.1, 2.0);
+		});
+
+		GetCfgValueInternal(L"glassStretchMiddle",
+		{
+			cfgData.glassStretchMiddle = (float)std::clamp(_wtof(value.data()), 0.1, 10.0);
+		});
+
+		GetCfgValueInternal(L"glassFadeDistance",
+		{
+			cfgData.glassFadeDistance = std::clamp(_wtoi(value.data()), 5, 100);
+		});
+
 		GetCfgValueInternal(L"crossfadeTime",
 		{
 			cfgData.crossfadeTime = (UINT)std::clamp(_wtoi(value.data()), 0, 500);

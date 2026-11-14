@@ -91,6 +91,14 @@ namespace MDWMBlurGlass
 		// glassRimThickness: how wide the rim it is compacted into is, px.
 		float glassRefractionAmount = 24.f;
 		int glassRimThickness = 12;
+		// glassStretchEdge / glassStretchMiddle: how much the reflection is
+		// enlarged at the window edge and at the inner end of the band; it
+		// runs smoothly from one to the other, like the rim of a lens.
+		float glassStretchEdge = 0.6f;
+		float glassStretchMiddle = 2.0f;
+		// glassFadeDistance: how much of the band, from its inner end, the
+		// reflection fades in over, percent (5-100).
+		int glassFadeDistance = 100;
 		// The edge pinch is drawn by a D3D pass inside dwm.exe on Windows 11.
 		// false turns it off and leaves the Composition material alone; so does
 		// creating C:\ProgramData\DWMBlurGlassRecon\no_pinch.

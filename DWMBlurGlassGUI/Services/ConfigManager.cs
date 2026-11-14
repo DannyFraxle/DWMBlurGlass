@@ -148,6 +148,9 @@ namespace DWMBlurGlassGUI.Services
             Config.LuminosityOpacity = ReadFloat("luminosityOpacity", 0.65f);
             Config.GlassIntensity = ReadFloat("glassIntensity", 1.0f);
             Config.GlassRimThickness = Math.Clamp(ReadInt("glassRimThickness", 12), 1, 64);
+            Config.GlassStretchEdge = Math.Clamp(ReadFloat("glassStretchEdge", 0.6f), 0.1f, 2.0f);
+            Config.GlassStretchMiddle = Math.Clamp(ReadFloat("glassStretchMiddle", 2.0f), 0.1f, 10.0f);
+            Config.GlassFadeDistance = Math.Clamp(ReadInt("glassFadeDistance", 100), 5, 100);
             Config.CustomAeroTexture = ReadBool("customAeroTexture", false);
             Config.CustomAeroTexturePath = ReadString("customAeroTexturePath", "");
 
@@ -217,6 +220,9 @@ namespace DWMBlurGlassGUI.Services
             WriteFloat("luminosityOpacity", Config.LuminosityOpacity);
             WriteFloat("glassIntensity", Config.GlassIntensity);
             WriteInt("glassRimThickness", Config.GlassRimThickness);
+            WriteFloat("glassStretchEdge", Config.GlassStretchEdge);
+            WriteFloat("glassStretchMiddle", Config.GlassStretchMiddle);
+            WriteInt("glassFadeDistance", Config.GlassFadeDistance);
             WriteBool("customAeroTexture", Config.CustomAeroTexture);
             WriteString("customAeroTexturePath", Config.CustomAeroTexturePath);
 

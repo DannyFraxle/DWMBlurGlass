@@ -5,11 +5,12 @@
 // window's glass material - under its tint, gradient, title and buttons - so
 // this shader never touches the frame DWM puts on screen; it only reads it.
 //
-// Into a band `rim` px wide along the titlebar's edges it compacts the
-// surroundings: the strip of desktop `reach` px wide just OUTSIDE each edge is
-// squeezed into the `rim` px just inside it, mirrored about the edge - what is
-// right outside shows right inside, what is further out shows further in -
-// which is how the curved edge of a thick pane of glass gathers light from
+// Into a band `rim` px wide along the titlebar's edges it mirrors the
+// surroundings just OUTSIDE each edge, mirrored about it - what is right
+// outside shows right inside, what is further out shows further in - scaled
+// like the rim of a lens: a little squeezed at the edge (stretchStart),
+// magnified by the inner side (stretchEnd) - which is how the curved edge
+// of a thick pane of glass gathers light from
 // around it. Everywhere else the texture is transparent, so the blurred pane
 // shows through.
 //
@@ -32,9 +33,9 @@ cbuffer Params : register(b0)
     float  rim;         // width of the band, px
     float  cornerRadius;
 
-    float  reach;       // width of the outside strip compacted into it, px
-    float  gamma;       // < 1 packs the reflection against the rim, 1 is uniform
-    float  chromatic;   // per-channel spread of the reach, 0..1
+    float  stretchStart; // reflection scale at the rim (0.6 = squeezed)
+    float  stretchEnd;   // reflection scale at the band's inner side (2 = doubled)
+    float  chromatic;   // per-channel spread of how far out it gathers, 0..1
     float  highlight;   // how much brighter the reflection gets toward the rim
 
     float2 lightDir;    // unit vector pointing TOWARD the light
@@ -45,7 +46,8 @@ cbuffer Params : register(b0)
     float2 invFrame;    // 1 / composed frame size
 
     float  occluderCount;
-    float3 pad0;
+    float  fade;        // share of the band, from its inner end, it fades in over (0..1]
+    float2 pad0;
     float4 occluders[8];
 };
 
@@ -121,12 +123,17 @@ float4 PSMain(VSOut i) : SV_Target
     // sample is never the titlebar itself), then further out the deeper into
     // the band this pixel is - the edge acts as a mirror, so what lies just
     // outside appears just inside, and something approaching the window meets
-    // its own image at the edge. With gamma < 1 the steep rim packs a wide
-    // strip of the surroundings into its first few pixels and the image opens
-    // out as the surface flattens, which is what makes it read as curving over
-    // a rounded edge rather than lying flat on it.
+    // its own image at the edge. Like the rim of a lens, the reflection is
+    // scaled by `stretch`, which runs from stretchStart at the rim to
+    // stretchEnd at the inner side: a little squeezed at the edge, opening out
+    // to magnified as the surface flattens. `outward` integrates 1 / stretch
+    // over the depth, so each band pixel shows exactly that scale.
     float2 edge = px + n * (depth + 0.75);
-    float outward = reach * pow(t, gamma);
+    float a = stretchStart;
+    float b = stretchEnd;
+    float outward = abs(b - a) < 1e-3
+        ? depth / a
+        : band / (b - a) * log((a + (b - a) * t) / a);
 
     // Sharp at the rim, increasingly blurred toward the inner side, so the
     // reflection dissolves into the blurred pane rather than ending on a line.
@@ -162,10 +169,12 @@ float4 PSMain(VSOut i) : SV_Target
     else
         col = saturate(col);
 
-    // Faint where the band meets the titlebar's blur and building up across
-    // its width to full strength at the rim. Starts from zero with zero slope,
-    // so there is no seam on the inner side.
-    float coverage = steep * steep;
+    // Faint where the band meets the titlebar's blur, building up to full
+    // strength over `fade` of the band's width (from its inner end; the Fade
+    // distance setting) and full from there to the rim. Starts from zero with
+    // zero slope, so there is no seam on the inner side.
+    float fadeIn = saturate(steep / max(fade, 0.01));
+    float coverage = fadeIn * fadeIn;
 
     // A side that is not a rim edge (the titlebar's bottom, where it meets the
     // client area) has its edge pushed far out in `rect`; the bands running

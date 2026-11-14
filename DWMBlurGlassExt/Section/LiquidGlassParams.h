@@ -21,8 +21,8 @@ namespace MDWMBlurGlassExt::LiquidGlassPass
 		float rim;              // band width, px
 		float cornerRadius;     // px
 
-		float reach;            // outside strip compacted into the band, px
-		float gamma;
+		float stretchStart;     // how much the reflection is enlarged at the rim
+		float stretchEnd;       // ... and at the band's inner side
 		float chromatic;
 		float highlight;
 
@@ -34,7 +34,8 @@ namespace MDWMBlurGlassExt::LiquidGlassPass
 		float invFrame[2];      // 1 / composed frame size
 
 		float occluderCount;
-		float pad0[3];
+		float fade;             // share of the band, from its inner end, the reflection fades in over (0..1]
+		float pad0[2];
 
 		float occluders[kMaxShaderOccluders][4];
 	};

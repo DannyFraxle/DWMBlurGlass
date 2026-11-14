@@ -71,6 +71,9 @@
 	<useaccentcolor>Use Accent color to override color settings RGB</useaccentcolor>
 	<glassIntensity>Aero reflection texture opacity:</glassIntensity>
 	<glassEdgeThickness>Edge thickness:</glassEdgeThickness>
+	<glassStretchEdge>Edge stretch:</glassStretchEdge>
+	<glassStretchMiddle>Middle stretch:</glassStretchMiddle>
+	<glassFadeDistance>Fade distance:</glassFadeDistance>
 	<customAeroTexture>Custom Aero reflection texture:</customAeroTexture>
 	<browse>Browse</browse>
 	<texturepath_error>The selected file cannot be loaded due to permission restrictions. The file must not be located in the user folder (User) or its subdirectories.</texturepath_error>

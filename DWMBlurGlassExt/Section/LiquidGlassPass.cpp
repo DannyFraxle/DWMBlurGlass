@@ -18,6 +18,7 @@
 #include <atomic>
 #include <algorithm>
 #include <cstring>
+#include <cmath>
 #include <cstdlib>
 #include <climits>
 #include <vector>
@@ -101,6 +102,16 @@ namespace MDWMBlurGlassExt::LiquidGlassPass
 			int sharedNext{ 0 };
 			bool sharedFailed{ false };   // this device cannot make them; read back instead
 		};
+
+		// How much the reflection is scaled across the band - at the window
+		// edge and at the inner end, from the settings (Edge / Middle stretch).
+		// It runs smoothly between them, like the rim of a lens. This is how
+		// far out that gathers, for a band `rim` px deep (the shader integrates
+		// 1 / scale over the depth the same way).
+		float GatherDistance(float rim, float a, float b)
+		{
+			return std::abs(b - a) < 1e-3f ? rim / a : rim / (b - a) * std::log(b / a);
+		}
 
 		// A band is rendered on every present. It is LIVE - handed to the UI
 		// thread on the GPU each frame - while its window moves (and kLiveMs
@@ -767,7 +778,9 @@ namespace MDWMBlurGlassExt::LiquidGlassPass
 		ID3D11ShaderResourceView* noSRV = nullptr;
 
 		const float cfgRim{ static_cast<float>(g_configData.glassRimThickness) };
-		const float cfgReach{ g_configData.glassRefractionAmount };
+		const float stretchEdge{ std::clamp(g_configData.glassStretchEdge, 0.1f, 2.0f) };
+		const float stretchMiddle{ std::clamp(g_configData.glassStretchMiddle, 0.1f, 10.0f) };
+		const float fade{ std::clamp(static_cast<float>(g_configData.glassFadeDistance) / 100.f, 0.05f, 1.f) };
 		const float far_{ 100000.f };
 
 		bool anyLive{ false };
@@ -834,13 +847,13 @@ namespace MDWMBlurGlassExt::LiquidGlassPass
 			band->lastRendered = now;
 
 			// The band is as thick as configured (the GUI's edge thickness), up
-			// to most of the titlebar - it sits under the title and buttons, so
-			// it may run behind them. How much it squeezes stays the same at any
-			// thickness: glassRefractionAmount over the default 12 px band, so
-			// the defaults (24 / 12) gather twice the band's width from outside.
-			const float rim{ (std::min)(cfgRim, 0.9f * static_cast<float>((std::min)(bandW, bandH))) };
-			const float compaction{ std::clamp(cfgReach / 12.f, 1.f, 5.f) };
-			const float reach{ rim * compaction };
+			// to the titlebar's full height - it sits under the title and
+			// buttons, so it may run behind them, and each pixel mirrors its
+			// nearest edge, so it cannot be deeper than the titlebar is tall.
+			// The reflection is scaled by Edge stretch at the rim rising to
+			// Middle stretch at the inner side; how far out that gathers follows.
+			const float rim{ (std::min)(cfgRim, static_cast<float>((std::min)(bandW, bandH))) };
+			const float reach{ GatherDistance(rim, stretchEdge, stretchMiddle) };
 			const float chromatic{ entry.active ? 0.15f : 0.08f };
 
 			// Refresh what this band samples: the strip around the titlebar.
@@ -877,10 +890,8 @@ namespace MDWMBlurGlassExt::LiquidGlassPass
 			params.invTarget[1] = 1.f / static_cast<float>(bandH);
 			params.rim = rim;
 			params.cornerRadius = entry.cornerRadius;
-			params.reach = reach;
-			// Mirrored about the edge and packed hard against it: well under 1,
-			// so the steep rim of a rounded edge holds most of the reflection.
-			params.gamma = 0.5f;
+			params.stretchStart = stretchEdge;
+			params.stretchEnd = stretchMiddle;
 			params.chromatic = chromatic;
 			// The reflection brightens toward the rim (up to 1.25x there). Kept
 			// modest: it is screened onto the pane, so it only ever adds light,
@@ -895,6 +906,7 @@ namespace MDWMBlurGlassExt::LiquidGlassPass
 			params.invFrame[0] = 1.f / static_cast<float>(width);
 			params.invFrame[1] = 1.f / static_cast<float>(height);
 			params.occluderCount = 0.f;
+			params.fade = fade;
 
 			D3D11_MAPPED_SUBRESOURCE mapped{};
 			if (FAILED(ctx->Map(g_cache.constants, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped)))

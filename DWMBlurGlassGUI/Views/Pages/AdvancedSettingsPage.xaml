@@ -144,8 +144,44 @@
                         <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
                     <TextBlock Text="{Binding Lang[glassEdgeThickness]}" VerticalAlignment="Center" FontSize="12"/>
-                    <Slider Grid.Column="1" Minimum="2" Maximum="40" Value="{Binding LiquidGlassEdgeThickness}" TickFrequency="1" IsSnapToTickEnabled="True" MaxWidth="300" Margin="10,0" VerticalAlignment="Center" Opacity="{Binding IsEffectTypeEnabled, Converter={StaticResource BoolToOpacityConverter}}" />
+                    <Slider Grid.Column="1" Minimum="2" Maximum="64" Value="{Binding LiquidGlassEdgeThickness}" TickFrequency="1" IsSnapToTickEnabled="True" MaxWidth="300" Margin="10,0" VerticalAlignment="Center" Opacity="{Binding IsEffectTypeEnabled, Converter={StaticResource BoolToOpacityConverter}}" />
                     <TextBlock Grid.Column="2" Text="{Binding LiquidGlassEdgeThickness, StringFormat={}{0} px}" VerticalAlignment="Center" FontSize="12" Width="40" HorizontalAlignment="Left" Opacity="{Binding IsEffectTypeEnabled, Converter={StaticResource BoolToOpacityConverter}}"/>
+                </Grid>
+
+                <!-- Edge stretch - Bubble Glass: reflection scale at the window edge -->
+                <Grid Margin="0,0,0,8" Visibility="{Binding LiquidGlassSettingsVisibility}">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="160"/>
+                        <ColumnDefinition Width="300"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="{Binding Lang[glassStretchEdge]}" VerticalAlignment="Center" FontSize="12"/>
+                    <Slider Grid.Column="1" Minimum="0.1" Maximum="2" Value="{Binding LiquidGlassStretchEdge}" TickFrequency="0.05" IsSnapToTickEnabled="True" MaxWidth="300" Margin="10,0" VerticalAlignment="Center" Opacity="{Binding IsEffectTypeEnabled, Converter={StaticResource BoolToOpacityConverter}}" />
+                    <TextBlock Grid.Column="2" Text="{Binding LiquidGlassStretchEdge, StringFormat={}{0:0.00}x}" VerticalAlignment="Center" FontSize="12" Width="40" HorizontalAlignment="Left" Opacity="{Binding IsEffectTypeEnabled, Converter={StaticResource BoolToOpacityConverter}}"/>
+                </Grid>
+
+                <!-- Middle stretch - Bubble Glass: reflection scale at the inner end of the band -->
+                <Grid Margin="0,0,0,8" Visibility="{Binding LiquidGlassSettingsVisibility}">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="160"/>
+                        <ColumnDefinition Width="300"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="{Binding Lang[glassStretchMiddle]}" VerticalAlignment="Center" FontSize="12"/>
+                    <Slider Grid.Column="1" Minimum="0.1" Maximum="10" Value="{Binding LiquidGlassStretchMiddle}" TickFrequency="0.1" IsSnapToTickEnabled="True" MaxWidth="300" Margin="10,0" VerticalAlignment="Center" Opacity="{Binding IsEffectTypeEnabled, Converter={StaticResource BoolToOpacityConverter}}" />
+                    <TextBlock Grid.Column="2" Text="{Binding LiquidGlassStretchMiddle, StringFormat={}{0:0.0}x}" VerticalAlignment="Center" FontSize="12" Width="40" HorizontalAlignment="Left" Opacity="{Binding IsEffectTypeEnabled, Converter={StaticResource BoolToOpacityConverter}}"/>
+                </Grid>
+
+                <!-- Fade distance - Bubble Glass: share of the band the reflection fades in over -->
+                <Grid Margin="0,0,0,8" Visibility="{Binding LiquidGlassSettingsVisibility}">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="160"/>
+                        <ColumnDefinition Width="300"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="{Binding Lang[glassFadeDistance]}" VerticalAlignment="Center" FontSize="12"/>
+                    <Slider Grid.Column="1" Minimum="5" Maximum="100" Value="{Binding LiquidGlassFadeDistance}" TickFrequency="1" IsSnapToTickEnabled="True" MaxWidth="300" Margin="10,0" VerticalAlignment="Center" Opacity="{Binding IsEffectTypeEnabled, Converter={StaticResource BoolToOpacityConverter}}" />
+                    <TextBlock Grid.Column="2" Text="{Binding LiquidGlassFadeDistance, StringFormat={}{0}%}" VerticalAlignment="Center" FontSize="12" Width="40" HorizontalAlignment="Left" Opacity="{Binding IsEffectTypeEnabled, Converter={StaticResource BoolToOpacityConverter}}"/>
                 </Grid>
 
                 <Separator Margin="0,5,0,5" Background="{DynamicResource CardStrokeColorDefaultBrush}"/>

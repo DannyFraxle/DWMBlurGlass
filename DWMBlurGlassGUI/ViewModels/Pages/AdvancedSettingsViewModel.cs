@@ -47,6 +47,9 @@ namespace DWMBlurGlassGUI.ViewModels.Pages
             DisableDcompRateLimit = config.DisableFramerateLimit;
             AeroReflectionOpacity = config.GlassIntensity * 100;
             LiquidGlassEdgeThickness = config.GlassRimThickness;
+            LiquidGlassStretchEdge = config.GlassStretchEdge;
+            LiquidGlassStretchMiddle = config.GlassStretchMiddle;
+            LiquidGlassFadeDistance = config.GlassFadeDistance;
             ColorBalance = config.AeroColorBalance * 100;
             LuminosityBalance = config.AeroBlurBalance * 100;
             SaturationBalance = config.AeroAfterglowBalance * 100;
@@ -151,6 +154,34 @@ namespace DWMBlurGlassGUI.ViewModels.Pages
         partial void OnLiquidGlassEdgeThicknessChanged(int value)
         {
             _configManager.Config.GlassRimThickness = value;
+        }
+
+        // Bubble Glass stretch: how much the reflection is enlarged at the
+        // window edge and at the inner end of the band (x, e.g. 0.6 / 2.0).
+        [ObservableProperty]
+        private double _liquidGlassStretchEdge = 0.6;
+
+        partial void OnLiquidGlassStretchEdgeChanged(double value)
+        {
+            _configManager.Config.GlassStretchEdge = (float)Math.Round(value, 2);
+        }
+
+        [ObservableProperty]
+        private double _liquidGlassStretchMiddle = 2.0;
+
+        partial void OnLiquidGlassStretchMiddleChanged(double value)
+        {
+            _configManager.Config.GlassStretchMiddle = (float)Math.Round(value, 2);
+        }
+
+        // Bubble Glass fade distance: how much of the band, from its inner end,
+        // the reflection fades in over (percent).
+        [ObservableProperty]
+        private int _liquidGlassFadeDistance = 100;
+
+        partial void OnLiquidGlassFadeDistanceChanged(int value)
+        {
+            _configManager.Config.GlassFadeDistance = value;
         }
 
         // Blur Quality Settings
