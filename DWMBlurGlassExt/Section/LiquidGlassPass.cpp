@@ -87,6 +87,9 @@ namespace MDWMBlurGlassExt::LiquidGlassPass
 			// is compared against.
 			std::vector<uint32_t> reference;
 			RECT referenceRect{};
+			// Where its window was (GetWindowRect) the last frame it was rendered.
+			POINT windowAt{};
+			bool windowSeen{ false };
 
 			// While live the band is also copied into one of these and the UI
 			// thread draws it straight from the GPU, a frame after it was
@@ -126,6 +129,7 @@ namespace MDWMBlurGlassExt::LiquidGlassPass
 		std::atomic_long g_statShared{ 0 };
 		std::atomic_long g_statDrained{ 0 };
 		std::atomic_long g_statHashChanges{ 0 };
+		std::atomic_long g_statShifted{ 0 };
 		std::atomic_bool g_anyLive{ false };
 		std::atomic_bool g_reportedShared{ false };
 
@@ -769,7 +773,27 @@ namespace MDWMBlurGlassExt::LiquidGlassPass
 		bool anyLive{ false };
 		for (int n = 0; n < count; ++n)
 		{
-			const auto& entry{ entries[n] };
+			auto& entry{ entries[n] };   // this frame's snapshot; ours to adjust
+			// Where the window is NOW. The rect was published when DWM last
+			// validated the window, and during a fast drag DWM slides it for
+			// many frames without validating - the band then gathered the
+			// surroundings of where the window had been and carried them along,
+			// for a second or so. So it follows the window's live position.
+			POINT windowNow{ LONG_MIN, LONG_MIN };
+			if (entry.hasWindowOrigin)
+			{
+				if (RECT windowRect{}; GetWindowRect(entry.hwnd, &windowRect))
+				{
+					windowNow = { windowRect.left, windowRect.top };
+					const LONG dx{ windowRect.left - entry.windowOrigin.x };
+					const LONG dy{ windowRect.top - entry.windowOrigin.y };
+					if (dx || dy)
+					{
+						OffsetRect(&entry.rect, dx, dy);
+						g_statShifted.fetch_add(1, std::memory_order_relaxed);
+					}
+				}
+			}
 			// Live while the window is moving (and for a second after), so the
 			// compacted surroundings follow it; once it has been still that long
 			// the band only needs refreshing for what changes around it.
@@ -784,6 +808,18 @@ namespace MDWMBlurGlassExt::LiquidGlassPass
 			if (!band)
 				continue;
 			band->lastUsed = now;
+			// Moved since the last frame (whether or not the scene was
+			// re-published): live, and for a while after, so the band settles
+			// on the surroundings where the window stopped. Since the last
+			// frame, not since publishing - a window DWM never re-validates
+			// after a drag would otherwise count as moving forever.
+			if (windowNow.x != LONG_MIN)
+			{
+				if (band->windowSeen && (windowNow.x != band->windowAt.x || windowNow.y != band->windowAt.y))
+					band->lastChangeAt = now;
+				band->windowAt = windowNow;
+				band->windowSeen = true;
+			}
 			const bool live{ moving || now - band->lastChangeAt < kChangeLiveMs };
 			anyLive = anyLive || live;
 			// Live: straight to the UI thread on the GPU.
@@ -982,7 +1018,7 @@ namespace MDWMBlurGlassExt::LiquidGlassPass
 	Stats GetStats()
 	{
 		return Stats{ g_statRendered.load(), g_statPublished.load(), g_statNotSettled.load(), g_statShared.load(),
-			g_statDrained.load(), g_statHashChanges.load() };
+			g_statDrained.load(), g_statHashChanges.load(), g_statShifted.load() };
 	}
 
 	bool AnyLive()

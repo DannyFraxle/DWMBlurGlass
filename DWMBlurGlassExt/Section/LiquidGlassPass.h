@@ -29,6 +29,7 @@ namespace MDWMBlurGlassExt::LiquidGlassPass
 		long shared;        // handed to the UI thread on the GPU (window moving)
 		long drained;       // readbacks collected
 		long hashChanges;   // readbacks that differed from the one before
+		long shifted;       // renders that followed a window DWM had moved since the scene was published
 	};
 	Stats GetStats();
 

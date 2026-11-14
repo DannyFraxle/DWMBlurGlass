@@ -44,6 +44,12 @@ namespace MDWMBlurGlassExt::GlassRects
 		ULONGLONG settledAt;
 		RECT occluders[kMaxOccluders];  // screen px
 		int occluderCount;
+		// Where the window was (GetWindowRect) when `rect` was published. The
+		// render thread compares it with where the window is now and shifts
+		// `rect` along: DWM can slide a window for many frames, mid-drag,
+		// before anything re-publishes the scene.
+		POINT windowOrigin;
+		bool hasWindowOrigin;
 	};
 
 	// The one display the pass draws on. Only a single-monitor desktop is

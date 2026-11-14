@@ -577,16 +577,12 @@ namespace MDWMBlurGlassExt::GlassScene
 					if (!PinchBands::Take(glass.owner, glass.uploaded, band))
 						continue;
 					g_diag.taken++;
-					// A readback band rendered for where the window was a few
-					// frames ago: skip it, keep what is on show. Taken again
-					// later, in case the window comes back to rest exactly there.
-					if (!band.shared && !Matches(band.rect, glass.rect))
-					{
-						g_diag.staleSkip++;
-						glass.uploaded = 0;
-						glass.retry = true;
-						continue;
-					}
+					// No position check here any more: a band's rect now follows
+					// the window's live position (the render thread tracks it),
+					// so it may differ from glass.rect, which only updates when
+					// DWM validates the window. A window that moved is live, and
+					// its readbacks are never published, so a readback band is
+					// always from where the window still is.
 					glass.retry = false;
 					try
 					{
@@ -917,6 +913,11 @@ namespace MDWMBlurGlassExt::GlassScene
 				entry.cornerRadius = IsZoomed(glass.hwnd) ? 0.f : 8.f * static_cast<float>(dpi ? dpi : 96) / 96.f;
 				entry.active = glass.active;
 				entry.settledAt = glass.changedAt + kQuietMs;
+				if (RECT windowRect{}; GetWindowRect(glass.hwnd, &windowRect))
+				{
+					entry.windowOrigin = { windowRect.left, windowRect.top };
+					entry.hasWindowOrigin = true;
+				}
 				entries.push_back(entry);
 			}
 		}

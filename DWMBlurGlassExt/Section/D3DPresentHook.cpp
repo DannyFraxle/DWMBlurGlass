@@ -52,9 +52,9 @@ namespace MDWMBlurGlassExt::D3DPresentHook
 		void LogSummary(const char* when)
 		{
 			const auto stats{ LiquidGlassPass::GetStats() };
-			ReconLog::Write("[stats] %s: presents=%d asked(0/1/2+)=%d/%d/%d passFrames=%d  bands rendered=%ld changed=%ld throttled=%ld gpu=%ld %s",
+			ReconLog::Write("[stats] %s: presents=%d asked(0/1/2+)=%d/%d/%d passFrames=%d  bands rendered=%ld changed=%ld throttled=%ld gpu=%ld shifted=%ld %s",
 				when, g_presentCalls.load(), g_presentsAsked0.load(), g_presentsAsked1.load(), g_presentsAskedMore.load(),
-				g_pinchFrames.load(), stats.rendered, stats.published, stats.throttled, stats.shared, GlassScene::LatencySummary().c_str());
+				g_pinchFrames.load(), stats.rendered, stats.published, stats.throttled, stats.shared, stats.shifted, GlassScene::LatencySummary().c_str());
 		}
 
 		// While no band is live (every window still, nothing around them
